@@ -1,0 +1,52 @@
+[workspace]
+resolver = "2"
+members = [
+    "rinzler-cli",
+    "rinzler-core",
+    "rinzler-scanner",
+    "rinzler-tui",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+description = "Rinzler - a somewhat intelligent API scanner"
+authors = ["akses0 <akses0@pm.me>"]
+license = "AGPL-3"
+repository = "https://github.com/akses0/rinzler"
+
+[workspace.dependencies]
+# Async runtime
+tokio = { version = "1.35", features = ["full"] }
+futures = "0.3"
+
+# HTTP client
+reqwest = { version = "0.11", features = ["json", "gzip", "cookies"] }
+
+# CLI
+clap = { version = "4.4", features = ["derive"] }
+
+# TUI
+ratatui = "0.29"
+crossterm = "0.28"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Database
+rusqlite = { version = "0.30", features = ["bundled"] }
+
+# Graph
+petgraph = "0.6"
+
+# Error handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
+# URL handling
+url = "2.5"
