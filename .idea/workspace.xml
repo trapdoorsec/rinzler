@@ -20,9 +20,7 @@
     </cargoProject>
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="75a6ddfc-3da5-4e6f-814e-a37b9fa2c551" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/rinzler-cli/src/arguments.rs" afterDir="false" />
-    </list>
+    <list default="true" id="75a6ddfc-3da5-4e6f-814e-a37b9fa2c551" name="Changes" comment="" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -208,7 +206,7 @@
       <updated>1765084474017</updated>
       <workItem from="1765084477087" duration="1587000" />
       <workItem from="1765089705382" duration="3741000" />
-      <workItem from="1765094046424" duration="8716000" />
+      <workItem from="1765094046424" duration="9535000" />
     </task>
     <servers />
   </component>
