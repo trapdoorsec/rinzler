@@ -13,3 +13,5 @@ rinzler-tui = { path = "../rinzler-tui" }
 tokio.workspace = true
 clap.workspace = true
 tracing.workspace = true
+clap-cargo = "0.18.3"
+url = "2.5.7"
