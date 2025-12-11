@@ -1,15 +1,15 @@
 [workspace]
 resolver = "2"
 members = [
-    "rinzler-cli",
+    "rinzler",
     "rinzler-core",
     "rinzler-scanner",
     "rinzler-tui",
 ]
 
 [workspace.package]
-version = "0.1.0"
-edition = "2021"
+version = "0.1.0-alpha"
+edition = "2024"
 description = "Rinzler - a somewhat intelligent API scanner"
 authors = ["akses0 <akses0@pm.me>"]
 license = "AGPL-3"

@@ -5,7 +5,7 @@
   </component>
   <component name="CargoProjects">
     <cargoProject FILE="$PROJECT_DIR$/Cargo.toml">
-      <package file="$PROJECT_DIR$/rinzler-cli">
+      <package file="$PROJECT_DIR$/rinzler">
         <feature name="default" enabled="true" />
       </package>
       <package file="$PROJECT_DIR$/rinzler-core">
@@ -24,9 +24,12 @@
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Cargo.lock" beforeDir="false" afterPath="$PROJECT_DIR$/Cargo.lock" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Cargo.toml" beforeDir="false" afterPath="$PROJECT_DIR$/Cargo.toml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/rinzler-cli/Cargo.toml" beforeDir="false" afterPath="$PROJECT_DIR$/rinzler-cli/Cargo.toml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/rinzler-cli/src/main.rs" beforeDir="false" afterPath="$PROJECT_DIR$/rinzler-cli/src/main.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/rinzler-cli/Cargo.toml" beforeDir="false" afterPath="$PROJECT_DIR$/rinzler/Cargo.toml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/rinzler-cli/src/arguments.rs" beforeDir="false" afterPath="$PROJECT_DIR$/rinzler/src/arguments.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/rinzler-cli/src/main.rs" beforeDir="false" afterPath="$PROJECT_DIR$/rinzler/src/main.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/rinzler-core/Cargo.toml" beforeDir="false" afterPath="$PROJECT_DIR$/rinzler-core/Cargo.toml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/rinzler-scanner/Cargo.toml" beforeDir="false" afterPath="$PROJECT_DIR$/rinzler-scanner/Cargo.toml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/rinzler-tui/Cargo.toml" beforeDir="false" afterPath="$PROJECT_DIR$/rinzler-tui/Cargo.toml" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -215,7 +218,7 @@
       <workItem from="1765084477087" duration="1587000" />
       <workItem from="1765089705382" duration="3741000" />
       <workItem from="1765094046424" duration="9535000" />
-      <workItem from="1765459496446" duration="1425000" />
+      <workItem from="1765459496446" duration="1986000" />
     </task>
     <servers />
   </component>

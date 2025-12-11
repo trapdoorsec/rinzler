@@ -376,8 +376,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "rinzler-cli"
-version = "0.1.0"
+name = "rinzler"
+version = "0.1.0-alpha"
 dependencies = [
  "clap",
  "clap-cargo",
@@ -391,15 +391,15 @@ dependencies = [
 
 [[package]]
 name = "rinzler-core"
-version = "0.1.0"
+version = "0.1.0-alpha"
 
 [[package]]
 name = "rinzler-scanner"
-version = "0.1.0"
+version = "0.1.0-alpha"
 
 [[package]]
 name = "rinzler-tui"
-version = "0.1.0"
+version = "0.1.0-alpha"
 
 [[package]]
 name = "scopeguard"
