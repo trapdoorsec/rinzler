@@ -5,7 +5,7 @@ edition = "2024"
 description = "Rinzler - a somewhat intelligent API scanner"
 authors = ["akses0 <akses0@pm.me>"]
 license = "AGPL-3.0-or-later"
-repository = "https://github.com/akses0/rinzler"
+repository = "https://github.com/trapdoorsec/rinzler"
 
 [dependencies]
 
