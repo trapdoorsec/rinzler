@@ -21,7 +21,7 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="75a6ddfc-3da5-4e6f-814e-a37b9fa2c551" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/Cargo.lock" beforeDir="false" afterPath="$PROJECT_DIR$/Cargo.lock" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Cargo.toml" beforeDir="false" afterPath="$PROJECT_DIR$/Cargo.toml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/rinzler/Cargo.toml" beforeDir="false" afterPath="$PROJECT_DIR$/rinzler/Cargo.toml" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -211,7 +211,7 @@
       <workItem from="1765084477087" duration="1587000" />
       <workItem from="1765089705382" duration="3741000" />
       <workItem from="1765094046424" duration="9535000" />
-      <workItem from="1765459496446" duration="2195000" />
+      <workItem from="1765459496446" duration="2503000" />
     </task>
     <servers />
   </component>
