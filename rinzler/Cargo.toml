@@ -1,6 +1,6 @@
 [package]
 name = "rinzler"
-version = "0.1.0-alpha"
+version = "0.1.1-alpha"
 edition = "2024"
 description = "Rinzler - a somewhat intelligent API scanner"
 authors = ["akses0 <akses0@pm.me>"]
