@@ -92,6 +92,15 @@ Based on dependencies, the architecture will likely include:
 ### Edition 2024
 This project uses Rust edition 2024. Be aware of edition-specific features and syntax when making changes.
 
+## Version Management
+
+The project uses an automatic version increment system via git pre-commit hook:
+- The patch/build number (third digit) increments automatically on each commit
+- Hook is installed at `.git/hooks/pre-commit`
+- To reinstall or set up on a new clone: `./scripts/install-hooks.sh`
+- To skip version increment for a single commit: `git commit --no-verify`
+- Manual version changes (major/minor bumps) should be done by editing `Cargo.toml` directly
+
 ## Security Context
 
 This tool is designed for authorized security testing and penetration testing. When working on scanning features:

@@ -289,7 +289,7 @@ dependencies = [
 
 [[package]]
 name = "rinzler"
-version = "0.1.1-alpha"
+version = "0.1.2-alpha"
 dependencies = [
  "clap",
  "clap-cargo",
@@ -298,15 +298,15 @@ dependencies = [
 
 [[package]]
 name = "rinzler-core"
-version = "0.1.1-alpha"
+version = "0.1.2-alpha"
 
 [[package]]
 name = "rinzler-scanner"
-version = "0.1.1-alpha"
+version = "0.1.2-alpha"
 
 [[package]]
 name = "rinzler-tui"
-version = "0.1.1-alpha"
+version = "0.1.2-alpha"
 
 [[package]]
 name = "serde"

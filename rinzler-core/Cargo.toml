@@ -1,6 +1,6 @@
 [package]
 name = "rinzler-core"
-version = "0.1.1-alpha"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
 
 [lib]
