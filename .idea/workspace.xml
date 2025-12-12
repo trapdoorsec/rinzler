@@ -22,6 +22,8 @@
   <component name="ChangeListManager">
     <list default="true" id="75a6ddfc-3da5-4e6f-814e-a37b9fa2c551" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Cargo.toml" beforeDir="false" afterPath="$PROJECT_DIR$/Cargo.toml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/rinzler/src/main.rs" beforeDir="false" afterPath="$PROJECT_DIR$/rinzler/src/main.rs" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -215,7 +217,7 @@
       <workItem from="1765084477087" duration="1587000" />
       <workItem from="1765089705382" duration="3741000" />
       <workItem from="1765094046424" duration="9535000" />
-      <workItem from="1765459496446" duration="6028000" />
+      <workItem from="1765459496446" duration="13782000" />
     </task>
     <servers />
   </component>
