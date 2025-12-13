@@ -19,12 +19,16 @@ Currently installs a pre-commit hook that automatically increments the patch/bui
 - After commit: `0.1.2-alpha`
 
 The hook:
-1. Reads the current version from `Cargo.toml`
+1. Reads the current version from workspace `Cargo.toml`
 2. Increments the patch number
 3. Preserves any pre-release suffix (e.g., `-alpha`, `-beta`)
-4. Updates `Cargo.toml` with the new version
-5. Runs `cargo update --workspace` to update `Cargo.lock`
-6. Stages both files automatically
+4. Updates workspace `Cargo.toml` with the new version
+5. Updates dependency versions in `rinzler/Cargo.toml` for:
+   - `rinzler-core`
+   - `rinzler-tui`
+   - `rinzler-scanner`
+6. Runs `cargo update --workspace` to update `Cargo.lock`
+7. Stages all modified files automatically
 
 ### Disabling the hook
 
@@ -40,4 +44,22 @@ git commit --no-verify
 
 ### Manual version management
 
-If you need to manually set a version (e.g., for a major/minor bump), edit `Cargo.toml` directly and the hook will continue incrementing from that new version.
+If you need to manually set a version (e.g., for a major/minor bump):
+
+1. Edit the workspace `Cargo.toml` to set the new version
+2. Edit `rinzler/Cargo.toml` to update the three dependency versions to match
+3. Run `cargo update --workspace` to update Cargo.lock
+4. Commit with the hook (it will continue incrementing from the new version)
+
+**Example:** Bumping from `0.1.x` to `0.2.0`:
+```bash
+# Edit Cargo.toml: version = "0.2.0-alpha"
+# Edit rinzler/Cargo.toml:
+#   rinzler-core = { version = "0.2.0-alpha", ... }
+#   rinzler-tui = { version = "0.2.0-alpha", ... }
+#   rinzler-scanner = { version = "0.2.0-alpha", ... }
+cargo update --workspace
+git add Cargo.toml rinzler/Cargo.toml Cargo.lock
+git commit -m "Bump version to 0.2.0-alpha"
+# Next commit will auto-increment to 0.2.1-alpha
+```

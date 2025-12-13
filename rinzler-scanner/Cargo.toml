@@ -2,6 +2,13 @@
 name = "rinzler-scanner"
 version.workspace = true
 edition.workspace = true
+description = "Web crawler and fuzzer library for Rinzler API scanner"
+authors = ["akses0 <akses0@pm.me>"]
+license = "AGPL-3.0-or-later"
+repository = "https://github.com/trapdoorsec/rinzler"
+readme = "../README.md"
+keywords = ["security", "api", "crawler", "fuzzer", "scanner"]
+categories = ["command-line-utilities", "web-programming", "development-tools"]
 
 [lib]
 

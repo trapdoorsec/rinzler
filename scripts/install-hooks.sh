@@ -13,8 +13,9 @@ cat > "$HOOKS_DIR/pre-commit" << 'EOF'
 # Auto-increment version build number on each commit
 
 CARGO_TOML="Cargo.toml"
+RINZLER_CARGO_TOML="rinzler/Cargo.toml"
 
-# Extract current version
+# Extract current version from workspace Cargo.toml
 CURRENT_VERSION=$(grep -m 1 '^version = ' "$CARGO_TOML" | sed 's/version = "\(.*\)"/\1/')
 
 if [ -z "$CURRENT_VERSION" ]; then
@@ -36,8 +37,18 @@ if [[ $CURRENT_VERSION =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)(-.*)?$ ]]; then
 
     echo "Incrementing version: $CURRENT_VERSION → $NEW_VERSION"
 
-    # Update version in Cargo.toml (only the first occurrence in [workspace.package])
+    # Update version in workspace Cargo.toml (only the first occurrence in [workspace.package])
     sed -i "0,/^version = \".*\"/{s/^version = \".*\"/version = \"$NEW_VERSION\"/}" "$CARGO_TOML"
+
+    # Update dependency versions in rinzler/Cargo.toml
+    # This updates the version for rinzler-core, rinzler-tui, and rinzler-scanner dependencies
+    if [ -f "$RINZLER_CARGO_TOML" ]; then
+        echo "Updating dependency versions in $RINZLER_CARGO_TOML"
+        sed -i "s/^\(rinzler-core = { version = \"\)[^\"]*\(\".*\)$/\1$NEW_VERSION\2/" "$RINZLER_CARGO_TOML"
+        sed -i "s/^\(rinzler-tui = { version = \"\)[^\"]*\(\".*\)$/\1$NEW_VERSION\2/" "$RINZLER_CARGO_TOML"
+        sed -i "s/^\(rinzler-scanner = { version = \"\)[^\"]*\(\".*\)$/\1$NEW_VERSION\2/" "$RINZLER_CARGO_TOML"
+        git add "$RINZLER_CARGO_TOML"
+    fi
 
     # Update Cargo.lock
     cargo update --workspace --quiet 2>/dev/null || true

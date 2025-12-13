@@ -94,13 +94,13 @@ doc-build: ## Generate documentation without opening
 publish-dry: ## Dry-run publish to crates.io
 	@echo "$(YELLOW)Dry-run publishing to crates.io...$(RESET)"
 	@echo "$(YELLOW)Checking rinzler-core...$(RESET)"
-	cd rinzler-core && cargo publish --dry-run
+	cd rinzler-core && cargo publish --dry-run --allow-dirty
 	@echo "$(YELLOW)Checking rinzler-scanner...$(RESET)"
-	cd rinzler-scanner && cargo publish --dry-run
+	cd rinzler-scanner && cargo publish --dry-run --allow-dirty
 	@echo "$(YELLOW)Checking rinzler-tui...$(RESET)"
-	cd rinzler-tui && cargo publish --dry-run
+	cd rinzler-tui && cargo publish --dry-run --allow-dirty
 	@echo "$(YELLOW)Checking rinzler...$(RESET)"
-	cd rinzler && cargo publish --dry-run
+	cd rinzler && cargo publish --dry-run --allow-dirty
 	@echo "$(GREEN)Dry-run complete!$(RESET)"
 
 publish: ## Publish all crates to crates.io (requires auth)

@@ -2,15 +2,18 @@
 name = "rinzler"
 version.workspace = true
 edition.workspace = true
-description.workspace = true
-authors.workspace = true
-license.workspace = true
-repository.workspace = true
+description = "Rinzler - a somewhat intelligent API scanner"
+authors = ["akses0 <akses0@pm.me>"]
+license = "AGPL-3.0-or-later"
+repository = "https://github.com/trapdoorsec/rinzler"
+readme = "../README.md"
+keywords = ["security", "api", "scanner", "pentesting", "fuzzer"]
+categories = ["command-line-utilities", "development-tools"]
 
 [dependencies]
-rinzler-core = { path ="../rinzler-core"}
-rinzler-tui = { path = "../rinzler-tui" }
-rinzler-scanner = { path = "../rinzler-scanner" }
+rinzler-core = { version = "0.1.6-alpha", path = "../rinzler-core" }
+rinzler-tui = { version = "0.1.6-alpha", path = "../rinzler-tui" }
+rinzler-scanner = { version = "0.1.6-alpha", path = "../rinzler-scanner" }
 # Just reference workspace deps (no versions needed!)
 url.workspace = true
 clap.workspace = true

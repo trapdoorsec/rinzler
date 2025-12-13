@@ -2,6 +2,13 @@
 name = "rinzler-tui"
 version.workspace = true
 edition.workspace = true
+description = "Terminal UI REPL interface for Rinzler API scanner"
+authors = ["akses0 <akses0@pm.me>"]
+license = "AGPL-3.0-or-later"
+repository = "https://github.com/trapdoorsec/rinzler"
+readme = "../README.md"
+keywords = ["tui", "repl", "terminal", "api", "scanner"]
+categories = ["command-line-utilities", "command-line-interface"]
 
 [lib]
 
