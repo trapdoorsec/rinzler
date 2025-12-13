@@ -9,11 +9,11 @@ use ratatui::{
     layout::{Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, Paragraph},
+    widgets::Paragraph,
     Frame, Terminal,
 };
 use std::fs;
-use std::io::{self, Write};
+use std::io;
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Copy, PartialEq)]

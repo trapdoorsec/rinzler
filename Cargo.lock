@@ -840,7 +840,7 @@ dependencies = [
 
 [[package]]
 name = "rinzler"
-version = "0.1.3-alpha"
+version = "0.1.4-alpha"
 dependencies = [
  "clap",
  "clap-cargo",
@@ -853,18 +853,18 @@ dependencies = [
 
 [[package]]
 name = "rinzler-core"
-version = "0.1.3-alpha"
+version = "0.1.4-alpha"
 dependencies = [
  "rusqlite",
 ]
 
 [[package]]
 name = "rinzler-scanner"
-version = "0.1.3-alpha"
+version = "0.1.4-alpha"
 
 [[package]]
 name = "rinzler-tui"
-version = "0.1.3-alpha"
+version = "0.1.4-alpha"
 dependencies = [
  "anyhow",
  "crossterm 0.29.0",
