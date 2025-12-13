@@ -4,3 +4,8 @@ version.workspace = true
 edition.workspace = true
 
 [lib]
+
+[dependencies]
+ratatui.workspace = true
+crossterm.workspace = true
+anyhow.workspace = true
