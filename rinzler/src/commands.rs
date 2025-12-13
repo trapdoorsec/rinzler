@@ -147,8 +147,5 @@ pub(crate) fn command_argument_builder() -> clap::Command {
                     ),
                 ),
         )
-        .subcommand(
-            command!("ui")
-                .about("Launch the interactive TUI REPL interface")
-        )
+        .subcommand(command!("ui").about("Launch the interactive TUI REPL interface"))
 }

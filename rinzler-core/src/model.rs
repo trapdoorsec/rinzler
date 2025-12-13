@@ -1,18 +1,18 @@
 #[derive(Debug, Clone)]
 pub enum NodeType {
-    RootHost,      // Initial seed URL domain
-    Endpoint,      // Same-domain URL
-    ExternalHost,  // Different domain discovered
+    RootHost,     // Initial seed URL domain
+    Endpoint,     // Same-domain URL
+    ExternalHost, // Different domain discovered
 }
 
 #[derive(Debug, Clone)]
 pub enum EdgeType {
-    Navigation,    // Standard link
-    Reference,     // Cross-domain link
-    Redirect,      // HTTP 301/302
-    FormAction,    // Form target
-    ApiCall,       // AJAX endpoint
-    Resource,      // CSS/JS/image
+    Navigation, // Standard link
+    Reference,  // Cross-domain link
+    Redirect,   // HTTP 301/302
+    FormAction, // Form target
+    ApiCall,    // AJAX endpoint
+    Resource,   // CSS/JS/image
 }
 
 #[derive(Debug)]

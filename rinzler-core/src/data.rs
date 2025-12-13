@@ -1,5 +1,5 @@
-use std::fs;
 use rusqlite::{Connection, Result};
+use std::fs;
 use std::path::Path;
 
 pub struct Database {
@@ -7,7 +7,7 @@ pub struct Database {
 }
 
 impl Database {
-    pub fn drop(path: &Path){
+    pub fn drop(path: &Path) {
         fs::remove_file(path).unwrap();
     }
     pub fn exists(path: &Path) -> bool {

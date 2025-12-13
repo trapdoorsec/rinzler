@@ -1,6 +1,6 @@
 pub mod data;
-mod model;
 mod map;
+mod model;
 
 pub fn print_banner() {
     let version = env!("CARGO_PKG_VERSION");

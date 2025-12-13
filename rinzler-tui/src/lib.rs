@@ -2,15 +2,15 @@ use anyhow::Result;
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind},
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use ratatui::{
+    Frame, Terminal,
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::Paragraph,
-    Frame, Terminal,
 };
 use std::fs;
 use std::io;
@@ -19,9 +19,9 @@ use std::path::PathBuf;
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum ExitMode {
     None,
-    Normal,      // exit, quit - ask about saving
-    ForceQuit,   // :q! - don't save, don't ask
-    WriteQuit,   // :wq!, ZZ - save and quit, don't ask
+    Normal,    // exit, quit - ask about saving
+    ForceQuit, // :q! - don't save, don't ask
+    WriteQuit, // :wq!, ZZ - save and quit, don't ask
 }
 
 pub struct App {
@@ -140,10 +140,7 @@ impl App {
     pub fn load_history(&mut self) {
         let path = Self::get_history_file_path();
         if let Ok(content) = fs::read_to_string(&path) {
-            let mut lines: Vec<String> = content
-                .lines()
-                .map(|s| s.to_string())
-                .collect();
+            let mut lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
 
             // Keep only the last 100 entries
             if lines.len() > 100 {
@@ -251,7 +248,9 @@ impl App {
             }
             "help" => {
                 self.add_output("Available commands:");
-                self.add_output("  init [path]                    - Initialize Rinzler configuration");
+                self.add_output(
+                    "  init [path]                    - Initialize Rinzler configuration",
+                );
                 self.add_output("  workspace create <name>        - Create a new workspace");
                 self.add_output("  workspace remove <name>        - Remove a workspace");
                 self.add_output("  workspace list                 - List all workspaces");
@@ -313,7 +312,10 @@ impl App {
                         }
                     }
                     _ => {
-                        self.add_output(format!("Error: unknown workspace subcommand: {}", parts[1]));
+                        self.add_output(format!(
+                            "Error: unknown workspace subcommand: {}",
+                            parts[1]
+                        ));
                     }
                 }
             }
@@ -328,7 +330,9 @@ impl App {
             }
             "fuzz" => {
                 if let Some(url) = parts.get(1) {
-                    let wordlist = parts.get(2).unwrap_or(&"~/.config/rinzler/wordlists/default.txt");
+                    let wordlist = parts
+                        .get(2)
+                        .unwrap_or(&"~/.config/rinzler/wordlists/default.txt");
                     let threads = parts.get(3).unwrap_or(&"10");
                     self.add_output(format!("Fuzzing URL: {}", url));
                     self.add_output(format!("  Wordlist: {}", wordlist));
@@ -410,10 +414,7 @@ pub fn run() -> Result<()> {
     result
 }
 
-fn run_app<B: ratatui::backend::Backend>(
-    terminal: &mut Terminal<B>,
-    app: &mut App,
-) -> Result<()> {
+fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()> {
     loop {
         terminal.draw(|f| ui(f, app))?;
 
@@ -474,7 +475,8 @@ fn run_app<B: ratatui::backend::Backend>(
                     app.scroll_offset = app.scroll_offset.saturating_sub(10);
                 }
                 KeyCode::PageDown => {
-                    app.scroll_offset = (app.scroll_offset + 10).min(app.output.len().saturating_sub(1));
+                    app.scroll_offset =
+                        (app.scroll_offset + 10).min(app.output.len().saturating_sub(1));
                 }
                 _ => {}
             }
@@ -492,11 +494,11 @@ fn ui(f: &mut Frame, app: &App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Min(3),      // Output area
-            Constraint::Length(1),   // Horizontal rule
-            Constraint::Length(1),   // Input area
-            Constraint::Length(1),   // Horizontal rule
-            Constraint::Length(1),   // Status bar
+            Constraint::Min(3),    // Output area
+            Constraint::Length(1), // Horizontal rule
+            Constraint::Length(1), // Input area
+            Constraint::Length(1), // Horizontal rule
+            Constraint::Length(1), // Status bar
         ])
         .split(f.area());
 
@@ -508,7 +510,8 @@ fn ui(f: &mut Frame, app: &App) {
     let scroll_offset = if app.scroll_offset == 0 && total_lines > output_height {
         total_lines.saturating_sub(output_height)
     } else {
-        app.scroll_offset.min(total_lines.saturating_sub(output_height))
+        app.scroll_offset
+            .min(total_lines.saturating_sub(output_height))
     };
 
     let visible_output: Vec<Line> = app
@@ -519,8 +522,7 @@ fn ui(f: &mut Frame, app: &App) {
         .map(|line| Line::from(line.clone()))
         .collect();
 
-    let output = Paragraph::new(visible_output)
-        .style(Style::default().fg(Color::White));
+    let output = Paragraph::new(visible_output).style(Style::default().fg(Color::White));
 
     f.render_widget(output, chunks[0]);
 
@@ -532,8 +534,7 @@ fn ui(f: &mut Frame, app: &App) {
     // Input area with prompt
     let prompt = "rnz> ";
     let input_text = format!("{}{}", prompt, app.input);
-    let input = Paragraph::new(input_text)
-        .style(Style::default().fg(Color::Yellow));
+    let input = Paragraph::new(input_text).style(Style::default().fg(Color::Yellow));
 
     f.render_widget(input, chunks[2]);
 
@@ -549,21 +550,19 @@ fn ui(f: &mut Frame, app: &App) {
     f.render_widget(rule2, chunks[3]);
 
     // Status bar
-    let status = Paragraph::new(
-        Line::from(vec![
-            Span::raw("Press "),
-            Span::styled("ESC", Style::default().add_modifier(Modifier::BOLD)),
-            Span::raw(" or type "),
-            Span::styled("exit", Style::default().add_modifier(Modifier::BOLD)),
-            Span::raw(" to quit | "),
-            Span::styled("help", Style::default().add_modifier(Modifier::BOLD)),
-            Span::raw(" for commands | "),
-            Span::styled("↑↓", Style::default().add_modifier(Modifier::BOLD)),
-            Span::raw(" history | "),
-            Span::styled("PgUp/PgDn", Style::default().add_modifier(Modifier::BOLD)),
-            Span::raw(" scroll"),
-        ])
-    )
+    let status = Paragraph::new(Line::from(vec![
+        Span::raw("Press "),
+        Span::styled("ESC", Style::default().add_modifier(Modifier::BOLD)),
+        Span::raw(" or type "),
+        Span::styled("exit", Style::default().add_modifier(Modifier::BOLD)),
+        Span::raw(" to quit | "),
+        Span::styled("help", Style::default().add_modifier(Modifier::BOLD)),
+        Span::raw(" for commands | "),
+        Span::styled("↑↓", Style::default().add_modifier(Modifier::BOLD)),
+        Span::raw(" history | "),
+        Span::styled("PgUp/PgDn", Style::default().add_modifier(Modifier::BOLD)),
+        Span::raw(" scroll"),
+    ]))
     .style(Style::default().fg(Color::DarkGray));
 
     f.render_widget(status, chunks[4]);

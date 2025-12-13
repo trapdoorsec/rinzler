@@ -1,18 +1,21 @@
 use clap;
+use clap::ArgMatches;
 use commands::command_argument_builder;
+use indicatif::{ProgressBar, ProgressStyle};
 use rinzler_core::{data::Database, print_banner};
+use rinzler_scanner::Crawler;
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::thread::sleep;
-use clap::ArgMatches;
-use url::Url;
-use indicatif::{ProgressBar, ProgressStyle};
 use std::time::Duration;
+use tracing_subscriber;
+use url::Url;
 
 mod commands;
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let cmd = command_argument_builder();
     let chosen_command = cmd.get_matches();
     let quiet = chosen_command.get_flag("quiet");
@@ -43,8 +46,8 @@ fn main() {
             Some(("rename", secondary_command)) => handle_workspace_rename(secondary_command),
             _ => unreachable!("clap should ensure we don't get here"),
         },
-        Some(("crawl", primary_command)) => handle_crawl(primary_command),
-        Some(("fuzz", primary_command)) => handle_fuzz(primary_command),
+        Some(("crawl", primary_command)) => handle_crawl(primary_command).await,
+        Some(("fuzz", primary_command)) => handle_fuzz(primary_command).await,
         Some(("plugin", primary_command)) => match primary_command.subcommand() {
             Some(("list", _)) => handle_plugin_list(),
             Some(("register", secondary_command)) => handle_plugin_register(secondary_command),
@@ -61,7 +64,7 @@ fn handle_init(args: &ArgMatches) {
     spinner.set_style(
         ProgressStyle::default_spinner()
             .template("{spinner:.cyan} {msg}")
-            .unwrap()
+            .unwrap(),
     );
     spinner.enable_steady_tick(Duration::from_millis(100));
     spinner.set_message("Let's get this show on the road!");
@@ -72,9 +75,7 @@ fn handle_init(args: &ArgMatches) {
     let rinzler_config_dir = Path::new(expanded_config_dir.as_ref());
     let db_loc = rinzler_config_dir.join("rinzler.db");
     let db_path = db_loc.as_path();
-    let user_config_root = rinzler_config_dir
-        .parent()
-        .expect("Invalid database path");
+    let user_config_root = rinzler_config_dir.parent().expect("Invalid database path");
 
     // Check if config directory exists
     let dir_exists = rinzler_config_dir.exists();
@@ -126,7 +127,12 @@ fn handle_init(args: &ArgMatches) {
                 wordlist_dir.display()
             );
         } else {
-            create_configuration_assets(&spinner, &rinzler_config_dir, &wordlist_dir, &wordlist_path);
+            create_configuration_assets(
+                &spinner,
+                &rinzler_config_dir,
+                &wordlist_dir,
+                &wordlist_path,
+            );
         }
     } else {
         create_configuration_assets(&spinner, &rinzler_config_dir, &wordlist_dir, &wordlist_path);
@@ -144,15 +150,24 @@ fn handle_init(args: &ArgMatches) {
     sleep(Duration::from_millis(1000));
     Database::new(db_path).expect("Failed to create database");
 
-    spinner.finish_with_message(format!(r#"
+    spinner.finish_with_message(format!(
+        r#"
     ✓ Rinzler initialization complete!
     ✓ Config directory: {}
     ✓ Database: {}
-    "#, user_config_root.display(), db_path.display()));
+    "#,
+        user_config_root.display(),
+        db_path.display()
+    ));
     sleep(Duration::from_millis(300));
 }
 const DEFAULT_WORDLIST: &str = include_str!("../wordlists/default.txt");
-fn create_configuration_assets(spinner: &ProgressBar, rinzler_config_dir: &&Path, wordlist_dir: &PathBuf, wordlist_path: &PathBuf) {
+fn create_configuration_assets(
+    spinner: &ProgressBar,
+    rinzler_config_dir: &&Path,
+    wordlist_dir: &PathBuf,
+    wordlist_path: &PathBuf,
+) {
     sleep(Duration::from_millis(2000));
     // Create directory structure
     spinner.set_message("Creating configuration directory structure...");
@@ -165,7 +180,10 @@ fn create_configuration_assets(spinner: &ProgressBar, rinzler_config_dir: &&Path
     spinner.set_message("Installing default wordlist...");
     sleep(Duration::from_millis(1000));
     fs::write(&wordlist_path, DEFAULT_WORDLIST).expect("Failed to write default wordlist");
-    spinner.set_message(format!("✓ Default wordlist installed to: {}", wordlist_path.display()));
+    spinner.set_message(format!(
+        "✓ Default wordlist installed to: {}",
+        wordlist_path.display()
+    ));
     sleep(Duration::from_millis(1000));
 }
 
@@ -193,24 +211,85 @@ fn handle_workspace_rename(args: &ArgMatches) {
     // TODO: Implement workspace renaming
 }
 
-fn handle_crawl(sub_matches: &ArgMatches) {
-    let url = sub_matches.get_one::<Url>("url");
-    let hosts_file = sub_matches.get_one::<std::path::PathBuf>("hosts-file");
-    let threads = sub_matches.get_one::<usize>("threads");
+async fn handle_crawl(sub_matches: &ArgMatches) {
+    // Initialize tracing for logging
+    tracing_subscriber::fmt::init();
 
-    if let Some(url) = url {
-        println!("Crawling URL: {}", url);
+    let url = sub_matches.get_one::<Url>("url").unwrap();
+    let hosts_file = sub_matches.get_one::<std::path::PathBuf>("hosts-file");
+    let threads = sub_matches.get_one::<usize>("threads").unwrap_or(&10);
+
+    let url_str = url.as_str();
+
+    println!("\n🕷️  Starting passive crawl of {}", url_str);
+    println!("Workers: {}", threads);
+    println!("Max depth: 3");
+    println!("Max pages: 100\n");
+
+    let spinner = ProgressBar::new_spinner();
+    spinner.set_style(
+        ProgressStyle::default_spinner()
+            .template("{spinner:.cyan} {msg}")
+            .unwrap(),
+    );
+    spinner.enable_steady_tick(Duration::from_millis(100));
+    spinner.set_message("Initializing crawler...");
+
+    // Create crawler
+    let crawler = Crawler::new()
+        .with_max_depth(3)
+        .with_max_pages(100);
+
+    spinner.set_message(format!("Crawling {}...", url_str));
+
+    // Start crawl
+    match crawler.crawl(url_str, *threads).await {
+        Ok(results) => {
+            spinner.finish_and_clear();
+
+            println!("\n✓ Crawl complete!");
+            println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+
+            println!("📊 Summary:");
+            println!("  Pages crawled: {}", results.len());
+
+            let total_links: usize = results.iter().map(|r| r.links_found.len()).sum();
+            println!("  Total links found: {}", total_links);
+
+            let total_forms: usize = results.iter().map(|r| r.forms_found).sum();
+            println!("  Total forms found: {}", total_forms);
+
+            let total_scripts: usize = results.iter().map(|r| r.scripts_found).sum();
+            println!("  Total scripts found: {}", total_scripts);
+
+            println!("\n📄 Pages discovered:");
+            for result in &results {
+                let status_emoji = match result.status_code {
+                    200..=299 => "✓",
+                    300..=399 => "↪",
+                    400..=499 => "⚠",
+                    500..=599 => "✗",
+                    _ => "?",
+                };
+
+                let content_type = result.content_type.as_deref().unwrap_or("unknown");
+                println!("  {} {} [{}] {}", status_emoji, result.status_code, content_type, result.url);
+            }
+
+            // Handle hosts file if provided
+            if let Some(_hosts_file) = hosts_file {
+                println!("\nNote: Hosts file support not yet implemented");
+            }
+        }
+        Err(e) => {
+            spinner.finish_and_clear();
+            eprintln!("✗ Crawl failed: {}", e);
+            std::process::exit(1);
+        }
     }
-    if let Some(hosts_file) = hosts_file {
-        println!("Crawling hosts from file: {}", hosts_file.display());
-    }
-    if let Some(threads) = threads {
-        println!("Using {} worker threads", threads);
-    }
-    // TODO: Implement crawling logic
 }
 
-fn handle_fuzz(sub_matches: &ArgMatches) {
+async fn handle_fuzz(sub_matches: &ArgMatches) {
     let url = sub_matches.get_one::<Url>("url");
     let hosts_file = sub_matches.get_one::<std::path::PathBuf>("hosts-file");
     let wordlist_file = sub_matches.get_one::<std::path::PathBuf>("wordlist-file");
@@ -229,6 +308,7 @@ fn handle_fuzz(sub_matches: &ArgMatches) {
         println!("Using {} worker threads", threads);
     }
     // TODO: Implement fuzzing logic
+    println!("Note: Fuzzing not yet implemented. Use crawl for now.");
 }
 
 fn handle_plugin_list() {

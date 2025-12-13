@@ -10,9 +10,13 @@ repository.workspace = true
 [dependencies]
 rinzler-core = { path ="../rinzler-core"}
 rinzler-tui = { path = "../rinzler-tui" }
+rinzler-scanner = { path = "../rinzler-scanner" }
 # Just reference workspace deps (no versions needed!)
 url.workspace = true
 clap.workspace = true
 shellexpand.workspace = true
 clap-cargo.workspace = true
 indicatif.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
