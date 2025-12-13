@@ -158,7 +158,7 @@ impl App {
         Ok(())
     }
 
-    pub fn request_exit(&mut self, mode: ExitMode) {
+    pub(crate) fn request_exit(&mut self, mode: ExitMode) {
         self.exit_mode = mode;
 
         match mode {

@@ -85,6 +85,20 @@ pub(crate) fn command_argument_builder() -> clap::Command {
                         .help("The number of async worker 'threads' in the worker pool.")
                         .value_parser(clap::value_parser!(usize))
                         .default_value("10"),
+                )
+                .arg(
+                    arg!(--"auto-follow")
+                        .required(false)
+                        .help("Automatically follow cross-domain links without prompting")
+                        .action(clap::ArgAction::SetTrue)
+                        .conflicts_with("no-follow"),
+                )
+                .arg(
+                    arg!(--"no-follow")
+                        .required(false)
+                        .help("Never follow cross-domain links (stay on the same domain)")
+                        .action(clap::ArgAction::SetTrue)
+                        .conflicts_with("auto-follow"),
                 ),
         )
         .subcommand(

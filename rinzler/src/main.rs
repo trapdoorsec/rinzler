@@ -1,14 +1,18 @@
 use clap;
 use clap::ArgMatches;
 use commands::command_argument_builder;
-use indicatif::{ProgressBar, ProgressStyle};
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use pager::Pager;
 use rinzler_core::{data::Database, print_banner};
 use rinzler_scanner::Crawler;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex as StdMutex};
 use std::thread::sleep;
 use std::time::Duration;
+use tokio::sync::Mutex;
 use tracing_subscriber;
 use url::Url;
 
@@ -218,71 +222,223 @@ async fn handle_crawl(sub_matches: &ArgMatches) {
     let url = sub_matches.get_one::<Url>("url").unwrap();
     let hosts_file = sub_matches.get_one::<std::path::PathBuf>("hosts-file");
     let threads = sub_matches.get_one::<usize>("threads").unwrap_or(&10);
+    let auto_follow = sub_matches.get_flag("auto-follow");
+    let no_follow = sub_matches.get_flag("no-follow");
 
     let url_str = url.as_str();
+    let base_domain = url.host_str().unwrap_or("unknown");
 
-    println!("\n🕷️  Starting passive crawl of {}", url_str);
+    println!("\n🕷️  Crawling {}", base_domain);
     println!("Workers: {}", threads);
     println!("Max depth: 3");
-    println!("Max pages: 100\n");
 
-    let spinner = ProgressBar::new_spinner();
-    spinner.set_style(
-        ProgressStyle::default_spinner()
-            .template("{spinner:.cyan} {msg}")
-            .unwrap(),
-    );
-    spinner.enable_steady_tick(Duration::from_millis(100));
-    spinner.set_message("Initializing crawler...");
+    let follow_mode = if no_follow {
+        "disabled (no cross-domain)"
+    } else if auto_follow {
+        "enabled (auto)"
+    } else {
+        "prompt on cross-domain"
+    };
+    println!("Cross-domain: {}\n", follow_mode);
 
-    // Create crawler
+    // Set up multi-progress
+    let m = Arc::new(MultiProgress::new());
+    let worker_bars: Arc<Mutex<HashMap<usize, ProgressBar>>> = Arc::new(Mutex::new(HashMap::new()));
+
+    // Create progress bars for each worker
+    for i in 0..*threads {
+        let pb = m.add(ProgressBar::new_spinner());
+        pb.set_style(
+            ProgressStyle::default_spinner()
+                .template("{spinner:.cyan} Worker {msg}")
+                .unwrap(),
+        );
+        pb.enable_steady_tick(Duration::from_millis(100));
+        pb.set_message(format!("{}: idle", i));
+        worker_bars.lock().await.insert(i, pb);
+    }
+
+    // Progress callback
+    let worker_bars_clone = worker_bars.clone();
+    let progress_callback = Arc::new(move |worker_id: usize, url: String| {
+        let path = Url::parse(&url)
+            .ok()
+            .and_then(|u| {
+                let path = u.path().to_string();
+                if path.is_empty() || path == "/" {
+                    Some("/".to_string())
+                } else {
+                    Some(path)
+                }
+            })
+            .unwrap_or_else(|| url.clone());
+
+        // Use try_lock to avoid blocking in async context
+        if let Ok(bars) = worker_bars_clone.try_lock() {
+            if let Some(pb) = bars.get(&worker_id) {
+                pb.set_message(format!("{}: {}", worker_id, path));
+            }
+        }
+    });
+
+    // Cross-domain callback (changes behavior based on flags)
+    let cross_domain_callback: rinzler_scanner::CrossDomainCallback = if no_follow {
+        // No-follow mode: always reject cross-domain links
+        Arc::new(|_url: String, _base: String| -> bool { false })
+    } else if auto_follow {
+        // Auto-follow mode: always accept cross-domain links
+        Arc::new(|_url: String, _base: String| -> bool { true })
+    } else {
+        // Prompt mode: ask user and remember decisions
+        // Track approved and denied cross-domains using std::sync::Mutex for blocking locks
+        // This ensures atomicity across all workers
+        let domain_decisions: Arc<StdMutex<(HashSet<String>, HashSet<String>)>> =
+            Arc::new(StdMutex::new((HashSet::new(), HashSet::new())));
+
+        let m_clone = m.clone();
+        let domain_decisions_clone = domain_decisions.clone();
+        Arc::new(move |url: String, _base: String| -> bool {
+            let parsed = Url::parse(&url).ok();
+            let domain = parsed.as_ref().and_then(|u| u.host_str()).unwrap_or("unknown").to_string();
+
+            // Lock to check decisions atomically - this blocks if another worker is prompting
+            let mut decisions = domain_decisions_clone.lock().unwrap();
+            let (ref mut approved, ref mut denied) = *decisions;
+
+            // Check if we've already made a decision for this domain
+            if approved.contains(&domain) {
+                return true;
+            }
+            if denied.contains(&domain) {
+                return false;
+            }
+
+            // Not in either set - ask the user (while holding the lock to prevent duplicate prompts)
+            let result = m_clone.suspend(|| {
+                print!("\n⚠️  Cross-domain link detected: {}\nFollow this link? [y/N]: ", domain);
+                io::stdout().flush().unwrap();
+
+                let mut response = String::new();
+                io::stdin().read_line(&mut response).unwrap();
+                let response = response.trim().to_lowercase();
+
+                response == "y" || response == "yes"
+            });
+
+            // Store the decision before releasing the lock
+            if result {
+                approved.insert(domain);
+            } else {
+                denied.insert(domain);
+            }
+
+            result
+        })
+    };
+
+    // Create crawler with callbacks
     let crawler = Crawler::new()
         .with_max_depth(3)
-        .with_max_pages(100);
-
-    spinner.set_message(format!("Crawling {}...", url_str));
+        .with_auto_follow(false)  // We handle cross-domain logic in the callback now
+        .with_progress_callback(progress_callback)
+        .with_cross_domain_callback(cross_domain_callback);
 
     // Start crawl
     match crawler.crawl(url_str, *threads).await {
         Ok(results) => {
-            spinner.finish_and_clear();
+            // Clear all progress bars
+            for (_, pb) in worker_bars.lock().await.iter() {
+                pb.finish_and_clear();
+            }
+            m.clear().unwrap();
 
-            println!("\n✓ Crawl complete!");
-            println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+            println!("\n✓ Crawl complete!\n");
 
-            println!("📊 Summary:");
-            println!("  Pages crawled: {}", results.len());
+            // Build the report as a string
+            let mut report = String::new();
+            report.push_str("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n");
+            report.push_str("📊 Summary:\n");
+            report.push_str(&format!("  Pages crawled: {}\n", results.len()));
 
             let total_links: usize = results.iter().map(|r| r.links_found.len()).sum();
-            println!("  Total links found: {}", total_links);
+            report.push_str(&format!("  Total links found: {}\n", total_links));
 
             let total_forms: usize = results.iter().map(|r| r.forms_found).sum();
-            println!("  Total forms found: {}", total_forms);
+            report.push_str(&format!("  Total forms found: {}\n", total_forms));
 
             let total_scripts: usize = results.iter().map(|r| r.scripts_found).sum();
-            println!("  Total scripts found: {}", total_scripts);
+            report.push_str(&format!("  Total scripts found: {}\n", total_scripts));
 
-            println!("\n📄 Pages discovered:");
+            // Group results by host
+            let mut results_by_host: HashMap<String, Vec<&rinzler_scanner::result::CrawlResult>> = HashMap::new();
             for result in &results {
-                let status_emoji = match result.status_code {
-                    200..=299 => "✓",
-                    300..=399 => "↪",
-                    400..=499 => "⚠",
-                    500..=599 => "✗",
-                    _ => "?",
-                };
+                if let Ok(parsed) = Url::parse(&result.url) {
+                    let host = parsed.host_str().unwrap_or("unknown").to_string();
+                    results_by_host.entry(host).or_insert_with(Vec::new).push(result);
+                }
+            }
 
-                let content_type = result.content_type.as_deref().unwrap_or("unknown");
-                println!("  {} {} [{}] {}", status_emoji, result.status_code, content_type, result.url);
+            report.push_str("\n📄 Pages discovered:\n");
+            for (host, host_results) in results_by_host.iter() {
+                report.push_str(&format!("\n  {}\n", host));
+                report.push_str(&format!("  {}\n", "─".repeat(host.len())));
+
+                for result in host_results {
+                    let (status_emoji, status_color) = match result.status_code {
+                        100..=199 => ("ℹ", "\x1b[37m"),      // white
+                        200..=299 => ("✓", "\x1b[32m"),      // green
+                        300..=399 => ("↪", "\x1b[36m"),      // cyan
+                        400..=499 => ("⚠", "\x1b[33m"),      // orange/yellow
+                        500..=599 => ("✗", "\x1b[31m"),      // red
+                        _ => ("?", "\x1b[37m"),              // white
+                    };
+
+                    // Extract just the path from the URL
+                    let path = Url::parse(&result.url)
+                        .ok()
+                        .and_then(|u| {
+                            let path = u.path().to_string();
+                            if path.is_empty() || path == "/" {
+                                Some("/".to_string())
+                            } else {
+                                Some(path)
+                            }
+                        })
+                        .unwrap_or_else(|| result.url.clone());
+
+                    // Only show content type if it's not text/html
+                    let content_type_suffix = result.content_type
+                        .as_ref()
+                        .filter(|ct| !ct.contains("text/html"))
+                        .map(|ct| format!("\x1b[90m  {}\x1b[0m", ct))
+                        .unwrap_or_default();
+
+                    report.push_str(&format!("  {} {}{}{} {}{}\n",
+                        status_emoji,
+                        status_color,
+                        result.status_code,
+                        "\x1b[0m",
+                        path,
+                        content_type_suffix
+                    ));
+                }
             }
 
             // Handle hosts file if provided
             if let Some(_hosts_file) = hosts_file {
-                println!("\nNote: Hosts file support not yet implemented");
+                report.push_str("\nNote: Hosts file support not yet implemented\n");
             }
+
+            // Display report in pager
+            Pager::with_pager("less -R").setup();
+            print!("{}", report);
         }
         Err(e) => {
-            spinner.finish_and_clear();
+            // Clear all progress bars
+            for (_, pb) in worker_bars.lock().await.iter() {
+                pb.finish_and_clear();
+            }
+            m.clear().unwrap();
             eprintln!("✗ Crawl failed: {}", e);
             std::process::exit(1);
         }

@@ -8,7 +8,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.1.8-alpha"
+version = "0.1.9-alpha"
 edition = "2024"
 description = "Rinzler - a somewhat intelligent API scanner"
 authors = ["akses0 <akses0@pm.me>"]
@@ -52,3 +52,6 @@ indicatif = "0.18.3"
 # URL handling
 url = "2.5"
 shellexpand = "3.1"
+
+# Pager
+pager = "0.16"

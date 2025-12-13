@@ -7,16 +7,21 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::Mutex;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 use url::Url;
+
+pub type ProgressCallback = Arc<dyn Fn(usize, String) + Send + Sync>;
+pub type CrossDomainCallback = Arc<dyn Fn(String, String) -> bool + Send + Sync>;
 
 pub struct Crawler {
     client: Client,
     visited: Arc<Mutex<HashSet<String>>>,
     results: Arc<Mutex<Vec<CrawlResult>>>,
     max_depth: usize,
-    max_pages: usize,
     base_domain: Option<String>,
+    progress_callback: Option<ProgressCallback>,
+    cross_domain_callback: Option<CrossDomainCallback>,
+    auto_follow: bool,
 }
 
 impl Crawler {
@@ -33,8 +38,10 @@ impl Crawler {
             visited: Arc::new(Mutex::new(HashSet::new())),
             results: Arc::new(Mutex::new(Vec::new())),
             max_depth: 3,
-            max_pages: 100,
             base_domain: None,
+            progress_callback: None,
+            cross_domain_callback: None,
+            auto_follow: false,
         }
     }
 
@@ -43,13 +50,23 @@ impl Crawler {
         self
     }
 
-    pub fn with_max_pages(mut self, pages: usize) -> Self {
-        self.max_pages = pages;
+    pub fn with_base_domain(mut self, domain: String) -> Self {
+        self.base_domain = Some(domain);
         self
     }
 
-    pub fn with_base_domain(mut self, domain: String) -> Self {
-        self.base_domain = Some(domain);
+    pub fn with_progress_callback(mut self, callback: ProgressCallback) -> Self {
+        self.progress_callback = Some(callback);
+        self
+    }
+
+    pub fn with_cross_domain_callback(mut self, callback: CrossDomainCallback) -> Self {
+        self.cross_domain_callback = Some(callback);
+        self
+    }
+
+    pub fn with_auto_follow(mut self, auto_follow: bool) -> Self {
+        self.auto_follow = auto_follow;
         self
     }
 
@@ -82,11 +99,18 @@ impl Crawler {
             // Process URLs in parallel using stream
             let urls_to_process: Vec<_> = to_crawl.drain(..).collect();
 
-            let results: Vec<_> = stream::iter(urls_to_process)
-                .map(|url| {
+            let results: Vec<_> = stream::iter(urls_to_process.into_iter().enumerate())
+                .map(|(worker_id, url)| {
                     let client = self.client.clone();
                     let base_domain = base_domain.clone();
+                    let progress_cb = self.progress_callback.clone();
+
                     async move {
+                        // Report progress
+                        if let Some(ref callback) = progress_cb {
+                            callback(worker_id, url.clone());
+                        }
+
                         self.fetch_and_parse(&client, &url, &base_domain).await
                     }
                 })
@@ -102,13 +126,6 @@ impl Crawler {
                         {
                             let mut results = self.results.lock().await;
                             results.push(crawl_result);
-
-                            // Check if we've hit the max pages limit
-                            if results.len() >= self.max_pages {
-                                info!("Reached max pages limit of {}", self.max_pages);
-                                depth = self.max_depth; // Force exit
-                                break;
-                            }
                         }
 
                         // Add new URLs to the queue if they haven't been visited
@@ -198,6 +215,13 @@ impl Crawler {
                 if let Some(absolute_url) = self.resolve_url(current_url, href) {
                     if self.is_same_domain(&absolute_url, base_domain) {
                         links.push(absolute_url);
+                    } else if !self.auto_follow {
+                        // Cross-domain link found and auto_follow is false
+                        if let Some(ref callback) = self.cross_domain_callback {
+                            if callback(absolute_url.clone(), base_domain.to_string()) {
+                                links.push(absolute_url);
+                            }
+                        }
                     }
                 }
             }
