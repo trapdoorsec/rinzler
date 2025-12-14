@@ -199,6 +199,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b05b61dc5112cbb17e4b6cd61790d9845d13888356391624cbe7e41efeac1e75"
 
 [[package]]
+name = "colored"
+version = "2.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "117725a109d387c937a1533ce01b450cbde6b88abceea8473c4d7a85853cda3c"
+dependencies = [
+ "lazy_static",
+ "windows-sys 0.52.0",
+]
+
+[[package]]
 name = "compression-codecs"
 version = "0.4.35"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1544,10 +1554,11 @@ dependencies = [
 
 [[package]]
 name = "rinzler"
-version = "0.1.10-alpha"
+version = "0.1.11-alpha"
 dependencies = [
  "clap",
  "clap-cargo",
+ "colored",
  "indicatif",
  "pager",
  "rinzler-core",
@@ -1562,7 +1573,7 @@ dependencies = [
 
 [[package]]
 name = "rinzler-core"
-version = "0.1.10-alpha"
+version = "0.1.11-alpha"
 dependencies = [
  "indicatif",
  "rinzler-scanner",
@@ -1573,7 +1584,7 @@ dependencies = [
 
 [[package]]
 name = "rinzler-scanner"
-version = "0.1.10-alpha"
+version = "0.1.11-alpha"
 dependencies = [
  "anyhow",
  "futures",

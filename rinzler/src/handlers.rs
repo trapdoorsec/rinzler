@@ -1,4 +1,5 @@
 use clap::ArgMatches;
+use colored::Colorize;
 use pager::Pager;
 use rinzler_core::data::Database;
 use std::fs;
@@ -67,11 +68,23 @@ pub use rinzler_core::crawl::{
     generate_crawl_report,
 };
 
-fn clear_line() {
-    print!("\x1B[1A\r\x1B[2K");
-    io::stdout().flush().unwrap();
+fn print_divider() {
+    println!("{}", "═".repeat(60).bright_blue().bold());
 }
+
+fn print_prompt(msg: &str) -> String {
+    print!("{} ", msg.bright_cyan().bold());
+    io::stdout().flush().unwrap();
+    let mut response = String::new();
+    io::stdin().read_line(&mut response).unwrap();
+    response.trim().to_lowercase()
+}
+
 pub fn handle_init(args: &ArgMatches) {
+    print_divider();
+    println!("{}", "  RINZLER INITIALIZATION".bright_white().bold());
+    print_divider();
+    println!();
 
     let db_path = args.get_one::<String>("PATH").unwrap();
     let force = args.get_flag("force");
@@ -80,119 +93,109 @@ pub fn handle_init(args: &ArgMatches) {
     let db_loc = rinzler_config_dir.join("rinzler.db");
     let db_path = db_loc.as_path();
     let user_config_root = rinzler_config_dir.parent().expect("Invalid database path");
-    println!("✓ Parsed arguments");
+
+    println!("{} Parsed arguments", "✓".green().bold());
+    println!("{} Target: {}", "→".blue(), rinzler_config_dir.display().to_string().bright_white());
+    println!();
 
     let dir_exists = rinzler_config_dir.exists();
     let wordlist_dir = rinzler_config_dir.join("wordlists");
     let wordlist_path = wordlist_dir.join("default.txt");
     let wordlist_exists = wordlist_path.exists();
-    println!("✓ Checked paths");
 
-    // If directory exists and force is not set, ask for confirmation
+    // Check for existing installation
     if (dir_exists || wordlist_exists) && !force {
-        println!("[WARNING] Configuration directory already exists:");
+        println!("{}", "⚠ WARNING".yellow().bold());
+        println!("Configuration directory already exists:");
         if dir_exists {
-            println!("  - Directory: {}", user_config_root.display());
+            println!("  {} {}", "•".yellow(), user_config_root.display().to_string().bright_white());
         }
         if wordlist_exists {
-            println!("  - Wordlist: {}", wordlist_path.display());
+            println!("  {} {}", "•".yellow(), wordlist_path.display().to_string().bright_white());
         }
+        println!();
+        println!("{}", "This operation will overwrite existing files.".yellow());
 
-        println!("This operation will overwrite existing files.");
-        println!("Do you want to continue? [y/N]: ");
-
-        io::stdout().flush().unwrap();
-
-        let mut response = String::new();
-        io::stdin().read_line(&mut response).unwrap();
-        let response = response.trim().to_lowercase();
-
-        clear_line();
-        clear_line();
-        clear_line();
+        let response = print_prompt("Do you want to continue? [y/N]:");
+        println!();
 
         if response != "y" && response != "yes" {
-            println!("Initialization cancelled.");
+            println!("{} Initialization cancelled.", "✗".red().bold());
             return;
-        } else {
-            println!("[WARNING] User chose to overwrite existing files.");
         }
+        println!("{} Proceeding with overwrite", "→".yellow().bold());
+        println!();
     }
 
-    // Ask if user wants to install the default wordlist
-    if !force {
-        println!("[SETUP] Rinzler includes a default API endpoint wordlist.");
-        println!(
-            "Would you like to install it to {}? [Y/n]: ",
-            wordlist_path.display()
-        );
+    // Wordlist installation prompt
+    let install_wordlist = if !force {
+        println!("{}", "WORDLIST SETUP".bright_blue().bold());
+        println!("Rinzler includes a default API endpoint wordlist.");
+        println!("{} {}", "Target:".blue(), wordlist_path.display().to_string().bright_white());
+        println!();
 
-        io::stdout().flush().unwrap();
+        let response = print_prompt("Would you like to install it? [Y/n]:");
+        println!();
 
-        let mut response = String::new();
-        io::stdin().read_line(&mut response).unwrap();
-        let response = response.trim().to_lowercase();
-        clear_line();
-        clear_line();
-        clear_line();
-        if response == "n" || response == "no" {
-
-            println!("Skipping wordlist installation.");
-            println!(
-                "You can manually add wordlists to: {}",
-                wordlist_dir.display()
-            );
-        } else {
-            create_configuration_assets(&rinzler_config_dir, &wordlist_dir, &wordlist_path);
-            println!("✓ Config assets created");
-        }
+        response != "n" && response != "no"
     } else {
-        // force mode
+        true
+    };
+
+    // Create configuration assets
+    if install_wordlist {
         create_configuration_assets(&rinzler_config_dir, &wordlist_dir, &wordlist_path);
-        println!("✓ Config assets created");
-        //if database already exists
-        if Database::exists(db_path) {
-            Database::drop(db_path);
-            println!("✓ Deleted existing database");
-        }
+    } else {
+        println!("{} Skipping wordlist installation", "→".blue());
+        println!("{} Manual wordlist location: {}", "ℹ".blue(), wordlist_dir.display().to_string().bright_white());
+        println!();
     }
 
-    // Initialize database
-    //if database already exists
-    if Database::exists(db_path) {
-        println!("[WARNING] Rinzler Database already exists.");
-        println!(
-            "Would you like to overwrite {}? [Y/n]: ",
-            db_path.display()
-        );
+    // Handle existing database in force mode
+    if force && Database::exists(db_path) {
+        println!("{} Deleting existing database (force mode)", "→".yellow().bold());
+        Database::drop(db_path);
+        println!("{} Existing database removed", "✓".green().bold());
+        println!();
+    }
 
-        io::stdout().flush().unwrap();
+    // Database creation
+    if Database::exists(db_path) && !force {
+        println!("{}", "⚠ WARNING".yellow().bold());
+        println!("Database already exists at:");
+        println!("  {} {}", "•".yellow(), db_path.display().to_string().bright_white());
+        println!();
 
-        let mut response = String::new();
-        io::stdin().read_line(&mut response).unwrap();
-        let response = response.trim().to_lowercase();
-        clear_line();
-        clear_line();
-        clear_line();
+        let response = print_prompt("Would you like to overwrite it? [Y/n]:");
+        println!();
+
         if response == "n" || response == "no" {
-            println!("✓ Skipping database installation.");
+            println!("{} Keeping existing database", "→".blue());
+            println!();
         } else {
             Database::drop(db_path);
-            println!("[WARNING] User chose to overwrite existing database.");
-            println!("✓ Deleted existing database");
+            println!("{} Existing database removed", "✓".green().bold());
+            println!();
         }
     }
-    Database::new(db_path).expect("Failed to create database");
-    println!("✓ Initializing database at: {}", db_path.display());
-    println!(
-        r#"
-    ✓ Rinzler initialization complete!
-    ✓ Config directory: {}
-    ✓ Database: {}
-    "#,
-        user_config_root.display(),
-        db_path.display()
-    );
+
+    if !Database::exists(db_path) {
+        println!("{} Creating database...", "→".blue());
+        Database::new(db_path).expect("Failed to create database");
+        println!("{} Database initialized: {}", "✓".green().bold(), db_path.display().to_string().bright_white());
+    }
+
+    println!();
+    print_divider();
+    println!("{}", "  INITIALIZATION COMPLETE".green().bold());
+    print_divider();
+    println!();
+    println!("{} Config directory: {}", "✓".green().bold(), user_config_root.display().to_string().bright_white());
+    println!("{} Database: {}", "✓".green().bold(), db_path.display().to_string().bright_white());
+    if install_wordlist {
+        println!("{} Wordlist: {}", "✓".green().bold(), wordlist_path.display().to_string().bright_white());
+    }
+    println!();
 }
 
 fn create_configuration_assets(
@@ -200,16 +203,26 @@ fn create_configuration_assets(
     wordlist_dir: &PathBuf,
     wordlist_path: &PathBuf,
 ) {
-    // Create directory structure
+    println!("{} Creating directory structure...", "→".blue());
+
     fs::create_dir_all(&rinzler_config_dir).expect("Failed to create config directory");
+    println!("  {} {}", "✓".green(), rinzler_config_dir.display().to_string().bright_white());
+
     fs::create_dir_all(&wordlist_dir).expect("Failed to create wordlists directory");
-    println!("✓ Directories created");
-    // Write the bundled wordlist
+    println!("  {} {}", "✓".green(), wordlist_dir.display().to_string().bright_white());
+
+    println!("{} Installing default wordlist...", "→".blue());
     fs::write(&wordlist_path, DEFAULT_WORDLIST).expect("Failed to write default wordlist");
-    println!(
-        "✓ Default wordlist installed to: {}",
-        wordlist_path.display()
+
+    let wordlist_size = DEFAULT_WORDLIST.len();
+    let line_count = DEFAULT_WORDLIST.lines().count();
+    println!("  {} {} ({} entries, {} bytes)",
+        "✓".green().bold(),
+        wordlist_path.display().to_string().bright_white(),
+        line_count.to_string().cyan(),
+        wordlist_size.to_string().cyan()
     );
+    println!();
 }
 
 pub fn handle_workspace_create(args: &ArgMatches) {

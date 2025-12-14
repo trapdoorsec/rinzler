@@ -7,7 +7,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.1.11-alpha"
+version = "0.1.12-alpha"
 edition = "2024"
 description = "Rinzler - a somewhat intelligent API scanner"
 authors = ["akses0 <akses0@pm.me>"]
@@ -51,6 +51,9 @@ shellexpand = "3.1"
 
 # Pager
 pager = "0.16"
+
+# Terminal colors
+colored = "2.1"
 
 # Testing
 tempfile = "3.8"
