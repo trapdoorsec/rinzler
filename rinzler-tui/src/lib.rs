@@ -15,6 +15,9 @@ use ratatui::{
 use std::fs;
 use std::io;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+use rinzler_core::crawl::{CrawlOptions, FollowMode, execute_crawl, generate_crawl_report};
+use url::Url;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum ExitMode {
@@ -320,12 +323,88 @@ impl App {
                 }
             }
             "crawl" => {
-                if let Some(url) = parts.get(1) {
-                    let threads = parts.get(2).unwrap_or(&"10");
-                    self.add_output(format!("Crawling URL: {} with {} threads", url, threads));
-                    self.add_output("TODO: Implement crawling logic");
+                if let Some(url_str) = parts.get(1) {
+                    let threads: usize = parts
+                        .get(2)
+                        .and_then(|t| t.parse().ok())
+                        .unwrap_or(10);
+
+                    // Parse URL
+                    let url = match Url::parse(url_str) {
+                        Ok(u) => u,
+                        Err(_) => {
+                            // Try adding http:// prefix
+                            match Url::parse(&format!("http://{}", url_str)) {
+                                Ok(u) => u,
+                                Err(e) => {
+                                    self.add_output(format!("Error: Invalid URL '{}': {}", url_str, e));
+                                    return;
+                                }
+                            }
+                        }
+                    };
+
+                    self.add_output(format!("🕷️  Crawling: {}", url));
+                    self.add_output(format!("Workers: {}", threads));
+                    self.add_output(format!("Max depth: 3"));
+                    self.add_output(format!("Cross-domain: disabled (same domain only)"));
+                    self.add_output("");
+
+                    // Create crawl options
+                    let options = CrawlOptions {
+                        urls: vec![url.to_string()],
+                        threads,
+                        max_depth: 3,
+                        follow_mode: FollowMode::Disabled,
+                        show_progress_bars: false,  // Disable progress bars in TUI mode
+                    };
+
+                    // Shared output buffer for progress updates
+                    let output_buffer = Arc::new(Mutex::new(Vec::new()));
+                    let output_clone = output_buffer.clone();
+
+                    // Progress callback that accumulates messages
+                    let progress_callback = Arc::new(move |msg: String| {
+                        let mut buffer = output_clone.lock().unwrap();
+                        buffer.push(msg);
+                    });
+
+                    // Execute crawl in a blocking manner using tokio runtime
+                    let result = std::thread::spawn(move || {
+                        let rt = tokio::runtime::Runtime::new().unwrap();
+                        rt.block_on(execute_crawl(options, Some(progress_callback)))
+                    })
+                    .join();
+
+                    // Get accumulated progress messages
+                    let messages = output_buffer.lock().unwrap();
+                    for msg in messages.iter() {
+                        self.add_output(msg.clone());
+                    }
+
+                    // Process results
+                    match result {
+                        Ok(Ok(results)) => {
+                            self.add_output("");
+                            self.add_output("✓ Crawl complete!");
+                            self.add_output("");
+
+                            // Generate and display report
+                            let report = generate_crawl_report(&results);
+                            for line in report.lines() {
+                                self.add_output(line.to_string());
+                            }
+                        }
+                        Ok(Err(e)) => {
+                            self.add_output(format!("✗ Crawl failed: {}", e));
+                        }
+                        Err(e) => {
+                            self.add_output(format!("✗ Thread panic: {:?}", e));
+                        }
+                    }
                 } else {
                     self.add_output("Error: crawl requires a URL");
+                    self.add_output("Usage: crawl <url> [threads]");
                 }
             }
             "fuzz" => {

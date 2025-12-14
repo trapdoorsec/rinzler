@@ -4,11 +4,10 @@ members = [
     "rinzler",
     "rinzler-core",
     "rinzler-scanner",
-    "rinzler-tui",
 ]
 
 [workspace.package]
-version = "0.1.9-alpha"
+version = "0.1.10-alpha"
 edition = "2024"
 description = "Rinzler - a somewhat intelligent API scanner"
 authors = ["akses0 <akses0@pm.me>"]
@@ -26,9 +25,6 @@ reqwest = { version = "0.12", features = ["json", "gzip", "cookies"] }
 # CLI
 clap = { version = "4.4", features = ["derive", "cargo"] }
 clap-cargo = "0.18"
-# TUI
-ratatui = "0.29"
-crossterm = "0.29"
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
@@ -55,3 +51,6 @@ shellexpand = "3.1"
 
 # Pager
 pager = "0.16"
+
+# Testing
+tempfile = "3.8"

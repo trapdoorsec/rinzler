@@ -69,15 +69,16 @@ pub(crate) fn command_argument_builder() -> clap::Command {
                 .arg(
                     arg!(-u --"url" <URL>)
                         .required(false)
-                        .help("The IP address to scan")
+                        .help("The URL to crawl")
                         .value_parser(clap::value_parser!(Url))
-                        .default_value("http://127.0.0.1"),
+                        .conflicts_with("hosts-file"),
                 )
                 .arg(
                     arg!(-H --"hosts-file" <PATH>)
                         .required(false)
-                        .help("a line delimited list of hosts to scan")
-                        .value_parser(clap::value_parser!(std::path::PathBuf)),
+                        .help("Path to a newline-delimited file of URLs to crawl")
+                        .value_parser(clap::value_parser!(std::path::PathBuf))
+                        .conflicts_with("url"),
                 )
                 .arg(
                     arg!(-t --"threads" <NUM_WORKERS>)
@@ -87,18 +88,18 @@ pub(crate) fn command_argument_builder() -> clap::Command {
                         .default_value("10"),
                 )
                 .arg(
-                    arg!(--"auto-follow")
+                    arg!(--"follow")
                         .required(false)
-                        .help("Automatically follow cross-domain links without prompting")
-                        .action(clap::ArgAction::SetTrue)
-                        .conflicts_with("no-follow"),
-                )
-                .arg(
-                    arg!(--"no-follow")
-                        .required(false)
-                        .help("Never follow cross-domain links (stay on the same domain)")
+                        .help("Follow cross-domain links with user prompts (default: stay on same domain)")
                         .action(clap::ArgAction::SetTrue)
                         .conflicts_with("auto-follow"),
+                )
+                .arg(
+                    arg!(--"auto-follow")
+                        .required(false)
+                        .help("Automatically follow all cross-domain links without prompting")
+                        .action(clap::ArgAction::SetTrue)
+                        .conflicts_with("follow"),
                 ),
         )
         .subcommand(
@@ -161,5 +162,4 @@ pub(crate) fn command_argument_builder() -> clap::Command {
                     ),
                 ),
         )
-        .subcommand(command!("ui").about("Launch the interactive TUI REPL interface"))
 }

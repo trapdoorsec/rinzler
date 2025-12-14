@@ -25,7 +25,6 @@ The hook:
 4. Updates workspace `Cargo.toml` with the new version
 5. Updates dependency versions in `rinzler/Cargo.toml` for:
    - `rinzler-core`
-   - `rinzler-tui`
    - `rinzler-scanner`
 6. Runs `cargo update --workspace` to update `Cargo.lock`
 7. Stages all modified files automatically
@@ -56,7 +55,6 @@ If you need to manually set a version (e.g., for a major/minor bump):
 # Edit Cargo.toml: version = "0.2.0-alpha"
 # Edit rinzler/Cargo.toml:
 #   rinzler-core = { version = "0.2.0-alpha", ... }
-#   rinzler-tui = { version = "0.2.0-alpha", ... }
 #   rinzler-scanner = { version = "0.2.0-alpha", ... }
 cargo update --workspace
 git add Cargo.toml rinzler/Cargo.toml Cargo.lock

@@ -16,3 +16,7 @@ categories = ["command-line-utilities", "command-line-interface"]
 ratatui.workspace = true
 crossterm.workspace = true
 anyhow.workspace = true
+tokio.workspace = true
+url.workspace = true
+rinzler-core = { version = "0.1.9-alpha", path = "../rinzler-core" }
+rinzler-scanner = { version = "0.1.9-alpha", path = "../rinzler-scanner" }
