@@ -68,20 +68,19 @@ pub async fn execute_crawl(
     let worker_bars: Arc<Mutex<HashMap<usize, ProgressBar>>> = Arc::new(Mutex::new(HashMap::new()));
 
     // Create progress bars for each worker (only if enabled)
-    if show_progress_bars
-        && let Some(ref multi_progress) = m {
-            for i in 0..threads {
-                let pb = multi_progress.add(ProgressBar::new_spinner());
-                pb.set_style(
-                    ProgressStyle::default_spinner()
-                        .template("{spinner:.cyan} Worker {msg}")
-                        .unwrap(),
-                );
-                pb.enable_steady_tick(Duration::from_millis(100));
-                pb.set_message(format!("{}: idle", i));
-                worker_bars.lock().await.insert(i, pb);
-            }
+    if show_progress_bars && let Some(ref multi_progress) = m {
+        for i in 0..threads {
+            let pb = multi_progress.add(ProgressBar::new_spinner());
+            pb.set_style(
+                ProgressStyle::default_spinner()
+                    .template("{spinner:.cyan} Worker {msg}")
+                    .unwrap(),
+            );
+            pb.enable_steady_tick(Duration::from_millis(100));
+            pb.set_message(format!("{}: idle", i));
+            worker_bars.lock().await.insert(i, pb);
         }
+    }
 
     // Progress callback for worker updates (only if progress bars enabled)
     let internal_progress_callback: rinzler_scanner::ProgressCallback = if show_progress_bars {
@@ -91,9 +90,10 @@ pub async fn execute_crawl(
 
             // Use try_lock to avoid blocking in async context
             if let Ok(bars) = worker_bars_clone.try_lock()
-                && let Some(pb) = bars.get(&worker_id) {
-                    pb.set_message(format!("{}: {}", worker_id, path));
-                }
+                && let Some(pb) = bars.get(&worker_id)
+            {
+                pb.set_message(format!("{}: {}", worker_id, path));
+            }
         })
     } else {
         // No-op callback when progress bars are disabled
@@ -182,14 +182,15 @@ pub async fn execute_crawl(
     let mut all_results = Vec::new();
     for (idx, url_str) in urls.iter().enumerate() {
         if let Some(ref callback) = progress_callback
-            && urls.len() > 1 {
-                callback(format!(
-                    "Crawling host {}/{}: {}",
-                    idx + 1,
-                    urls.len(),
-                    url_str
-                ));
-            }
+            && urls.len() > 1
+        {
+            callback(format!(
+                "Crawling host {}/{}: {}",
+                idx + 1,
+                urls.len(),
+                url_str
+            ));
+        }
 
         match crawler.crawl(url_str, threads).await {
             Ok(results) => {
@@ -240,12 +241,10 @@ pub fn generate_crawl_report(results: &[CrawlResult]) -> String {
 
     for result in results {
         if let Ok(url) = Url::parse(&result.url)
-            && let Some(host) = url.host_str() {
-                by_host
-                    .entry(host.to_string())
-                    .or_default()
-                    .push(result);
-            }
+            && let Some(host) = url.host_str()
+        {
+            by_host.entry(host.to_string()).or_default().push(result);
+        }
     }
 
     // Display results grouped by host
@@ -271,9 +270,10 @@ pub fn generate_crawl_report(results: &[CrawlResult]) -> String {
 
             // Only show MIME type if it's not text/html
             if let Some(ref content_type) = result.content_type
-                && content_type != "text/html" {
-                    line.push_str(&format!(" \x1b[90m{}\x1b[0m", content_type));
-                }
+                && content_type != "text/html"
+            {
+                line.push_str(&format!(" \x1b[90m{}\x1b[0m", content_type));
+            }
 
             report.push_str(&line);
             report.push('\n');

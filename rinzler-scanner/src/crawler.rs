@@ -215,17 +215,19 @@ impl Crawler {
 
         for element in document.select(&link_selector) {
             if let Some(href) = element.value().attr("href")
-                && let Some(absolute_url) = self.resolve_url(current_url, href) {
-                    if self.is_same_domain(&absolute_url, base_domain) {
+                && let Some(absolute_url) = self.resolve_url(current_url, href)
+            {
+                if self.is_same_domain(&absolute_url, base_domain) {
+                    links.push(absolute_url);
+                } else if !self.auto_follow {
+                    // Cross-domain link found and auto_follow is false
+                    if let Some(ref callback) = self.cross_domain_callback
+                        && callback(absolute_url.clone(), base_domain.to_string())
+                    {
                         links.push(absolute_url);
-                    } else if !self.auto_follow {
-                        // Cross-domain link found and auto_follow is false
-                        if let Some(ref callback) = self.cross_domain_callback
-                            && callback(absolute_url.clone(), base_domain.to_string()) {
-                                links.push(absolute_url);
-                            }
                     }
                 }
+            }
         }
 
         // Count forms
@@ -262,9 +264,10 @@ impl Crawler {
 
     fn is_same_domain(&self, url: &str, base_domain: &str) -> bool {
         if let Ok(parsed) = Url::parse(url)
-            && let Some(host) = parsed.host_str() {
-                return host == base_domain || host.ends_with(&format!(".{}", base_domain));
-            }
+            && let Some(host) = parsed.host_str()
+        {
+            return host == base_domain || host.ends_with(&format!(".{}", base_domain));
+        }
         false
     }
 
