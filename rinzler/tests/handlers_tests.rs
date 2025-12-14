@@ -77,9 +77,11 @@ fn test_load_urls_from_source_single_url() {
 fn test_load_urls_from_source_no_input() {
     let result = load_urls_from_source(None, None);
     assert!(result.is_err());
-    assert!(result
-        .unwrap_err()
-        .contains("Either --url or --hosts-file must be provided"));
+    assert!(
+        result
+            .unwrap_err()
+            .contains("Either --url or --hosts-file must be provided")
+    );
 }
 
 #[test]

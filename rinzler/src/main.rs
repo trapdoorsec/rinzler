@@ -23,18 +23,28 @@ async fn main() {
     match chosen_command.subcommand() {
         Some(("init", primary_command)) => handlers::handle_init(primary_command),
         Some(("workspace", primary_command)) => match primary_command.subcommand() {
-            Some(("create", secondary_command)) => handlers::handle_workspace_create(secondary_command),
-            Some(("remove", secondary_command)) => handlers::handle_workspace_remove(secondary_command),
+            Some(("create", secondary_command)) => {
+                handlers::handle_workspace_create(secondary_command)
+            }
+            Some(("remove", secondary_command)) => {
+                handlers::handle_workspace_remove(secondary_command)
+            }
             Some(("list", _)) => handlers::handle_workspace_list(),
-            Some(("rename", secondary_command)) => handlers::handle_workspace_rename(secondary_command),
+            Some(("rename", secondary_command)) => {
+                handlers::handle_workspace_rename(secondary_command)
+            }
             _ => unreachable!("clap should ensure we don't get here"),
         },
         Some(("crawl", primary_command)) => handlers::handle_crawl(primary_command).await,
         Some(("fuzz", primary_command)) => handlers::handle_fuzz(primary_command).await,
         Some(("plugin", primary_command)) => match primary_command.subcommand() {
             Some(("list", _)) => handlers::handle_plugin_list(),
-            Some(("register", secondary_command)) => handlers::handle_plugin_register(secondary_command),
-            Some(("unregister", secondary_command)) => handlers::handle_plugin_unregister(secondary_command),
+            Some(("register", secondary_command)) => {
+                handlers::handle_plugin_register(secondary_command)
+            }
+            Some(("unregister", secondary_command)) => {
+                handlers::handle_plugin_unregister(secondary_command)
+            }
             _ => unreachable!("clap should ensure we don't get here"),
         },
         _ => unreachable!("clap should ensure we don't get here"),

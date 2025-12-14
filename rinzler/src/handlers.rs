@@ -1,13 +1,10 @@
 use clap::ArgMatches;
-use indicatif::{ProgressBar, ProgressStyle};
 use pager::Pager;
 use rinzler_core::data::Database;
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::thread::sleep;
-use std::time::Duration;
 use tracing_subscriber;
 use url::Url;
 
@@ -65,17 +62,16 @@ pub fn parse_url_line(line: &str) -> Option<String> {
 }
 
 // Re-export crawl types and functions from rinzler-core
-pub use rinzler_core::crawl::{execute_crawl, extract_url_path, generate_crawl_report, CrawlOptions, CrawlProgressCallback, FollowMode};
+pub use rinzler_core::crawl::{
+    CrawlOptions, CrawlProgressCallback, FollowMode, execute_crawl, extract_url_path,
+    generate_crawl_report,
+};
 
+fn clear_line() {
+    print!("\x1B[1A\r\x1B[2K");
+    io::stdout().flush().unwrap();
+}
 pub fn handle_init(args: &ArgMatches) {
-    let spinner = ProgressBar::new_spinner();
-    spinner.set_style(
-        ProgressStyle::default_spinner()
-            .template("{spinner:.cyan} {msg}")
-            .unwrap(),
-    );
-    spinner.enable_steady_tick(Duration::from_millis(100));
-    spinner.set_message("Let's get this show on the road!");
 
     let db_path = args.get_one::<String>("PATH").unwrap();
     let force = args.get_flag("force");
@@ -84,81 +80,111 @@ pub fn handle_init(args: &ArgMatches) {
     let db_loc = rinzler_config_dir.join("rinzler.db");
     let db_path = db_loc.as_path();
     let user_config_root = rinzler_config_dir.parent().expect("Invalid database path");
+    println!("✓ Parsed arguments");
 
-    // Check if config directory exists
     let dir_exists = rinzler_config_dir.exists();
     let wordlist_dir = rinzler_config_dir.join("wordlists");
     let wordlist_path = wordlist_dir.join("default.txt");
     let wordlist_exists = wordlist_path.exists();
+    println!("✓ Checked paths");
 
     // If directory exists and force is not set, ask for confirmation
     if (dir_exists || wordlist_exists) && !force {
-        spinner.println("[WARNING] Configuration directory already exists:");
+        println!("[WARNING] Configuration directory already exists:");
         if dir_exists {
-            spinner.println(format!("  - Directory: {}", user_config_root.display()));
+            println!("  - Directory: {}", user_config_root.display());
         }
         if wordlist_exists {
-            spinner.println(format!("  - Wordlist: {}", wordlist_path.display()));
+            println!("  - Wordlist: {}", wordlist_path.display());
         }
 
-        spinner.println("This operation will overwrite existing files.");
-        spinner.println("Do you want to continue? [y/N]: ");
+        println!("This operation will overwrite existing files.");
+        println!("Do you want to continue? [y/N]: ");
+
         io::stdout().flush().unwrap();
 
         let mut response = String::new();
         io::stdin().read_line(&mut response).unwrap();
         let response = response.trim().to_lowercase();
 
+        clear_line();
+        clear_line();
+        clear_line();
+
         if response != "y" && response != "yes" {
-            println!("\nInitialization cancelled.");
+            println!("Initialization cancelled.");
             return;
+        } else {
+            println!("[WARNING] User chose to overwrite existing files.");
         }
     }
 
     // Ask if user wants to install the default wordlist
     if !force {
-        println!("\n[SETUP] Rinzler includes a default API endpoint wordlist.");
-        print!(
+        println!("[SETUP] Rinzler includes a default API endpoint wordlist.");
+        println!(
             "Would you like to install it to {}? [Y/n]: ",
             wordlist_path.display()
         );
+
         io::stdout().flush().unwrap();
 
         let mut response = String::new();
         io::stdin().read_line(&mut response).unwrap();
         let response = response.trim().to_lowercase();
-
+        clear_line();
+        clear_line();
+        clear_line();
         if response == "n" || response == "no" {
-            println!("\nSkipping wordlist installation.");
+
+            println!("Skipping wordlist installation.");
             println!(
                 "You can manually add wordlists to: {}",
                 wordlist_dir.display()
             );
         } else {
-            create_configuration_assets(
-                &spinner,
-                &rinzler_config_dir,
-                &wordlist_dir,
-                &wordlist_path,
-            );
+            create_configuration_assets(&rinzler_config_dir, &wordlist_dir, &wordlist_path);
+            println!("✓ Config assets created");
         }
     } else {
-        create_configuration_assets(&spinner, &rinzler_config_dir, &wordlist_dir, &wordlist_path);
-        sleep(Duration::from_millis(1000));
+        // force mode
+        create_configuration_assets(&rinzler_config_dir, &wordlist_dir, &wordlist_path);
+        println!("✓ Config assets created");
         //if database already exists
         if Database::exists(db_path) {
-            spinner.set_message("\n✓ deleting existing database");
-            sleep(Duration::from_millis(1000));
             Database::drop(db_path);
+            println!("✓ Deleted existing database");
         }
     }
 
     // Initialize database
-    spinner.set_message(format!("Initializing database at: {}", db_path.display()));
-    sleep(Duration::from_millis(1000));
-    Database::new(db_path).expect("Failed to create database");
+    //if database already exists
+    if Database::exists(db_path) {
+        println!("[WARNING] Rinzler Database already exists.");
+        println!(
+            "Would you like to overwrite {}? [Y/n]: ",
+            db_path.display()
+        );
 
-    spinner.finish_with_message(format!(
+        io::stdout().flush().unwrap();
+
+        let mut response = String::new();
+        io::stdin().read_line(&mut response).unwrap();
+        let response = response.trim().to_lowercase();
+        clear_line();
+        clear_line();
+        clear_line();
+        if response == "n" || response == "no" {
+            println!("✓ Skipping database installation.");
+        } else {
+            Database::drop(db_path);
+            println!("[WARNING] User chose to overwrite existing database.");
+            println!("✓ Deleted existing database");
+        }
+    }
+    Database::new(db_path).expect("Failed to create database");
+    println!("✓ Initializing database at: {}", db_path.display());
+    println!(
         r#"
     ✓ Rinzler initialization complete!
     ✓ Config directory: {}
@@ -166,33 +192,24 @@ pub fn handle_init(args: &ArgMatches) {
     "#,
         user_config_root.display(),
         db_path.display()
-    ));
-    sleep(Duration::from_millis(300));
+    );
 }
 
 fn create_configuration_assets(
-    spinner: &ProgressBar,
     rinzler_config_dir: &&Path,
     wordlist_dir: &PathBuf,
     wordlist_path: &PathBuf,
 ) {
-    sleep(Duration::from_millis(2000));
     // Create directory structure
-    spinner.set_message("Creating configuration directory structure...");
-    sleep(Duration::from_millis(1000));
     fs::create_dir_all(&rinzler_config_dir).expect("Failed to create config directory");
     fs::create_dir_all(&wordlist_dir).expect("Failed to create wordlists directory");
-    spinner.set_message("✓ Directories created");
-    sleep(Duration::from_millis(1000));
+    println!("✓ Directories created");
     // Write the bundled wordlist
-    spinner.set_message("Installing default wordlist...");
-    sleep(Duration::from_millis(1000));
     fs::write(&wordlist_path, DEFAULT_WORDLIST).expect("Failed to write default wordlist");
-    spinner.set_message(format!(
+    println!(
         "✓ Default wordlist installed to: {}",
         wordlist_path.display()
-    ));
-    sleep(Duration::from_millis(1000));
+    );
 }
 
 pub fn handle_workspace_create(args: &ArgMatches) {
@@ -264,7 +281,7 @@ pub async fn handle_crawl(sub_matches: &ArgMatches) {
         threads,
         max_depth: 3,
         follow_mode,
-        show_progress_bars: true,  // Enable progress bars in CLI mode
+        show_progress_bars: true, // Enable progress bars in CLI mode
     };
 
     // Execute crawl with progress callback

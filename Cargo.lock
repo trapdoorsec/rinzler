@@ -1544,7 +1544,7 @@ dependencies = [
 
 [[package]]
 name = "rinzler"
-version = "0.1.9-alpha"
+version = "0.1.10-alpha"
 dependencies = [
  "clap",
  "clap-cargo",
@@ -1562,7 +1562,7 @@ dependencies = [
 
 [[package]]
 name = "rinzler-core"
-version = "0.1.9-alpha"
+version = "0.1.10-alpha"
 dependencies = [
  "indicatif",
  "rinzler-scanner",
@@ -1573,7 +1573,7 @@ dependencies = [
 
 [[package]]
 name = "rinzler-scanner"
-version = "0.1.9-alpha"
+version = "0.1.10-alpha"
 dependencies = [
  "anyhow",
  "futures",

@@ -185,7 +185,12 @@ pub async fn execute_crawl(
     for (idx, url_str) in urls.iter().enumerate() {
         if let Some(ref callback) = progress_callback {
             if urls.len() > 1 {
-                callback(format!("Crawling host {}/{}: {}", idx + 1, urls.len(), url_str));
+                callback(format!(
+                    "Crawling host {}/{}: {}",
+                    idx + 1,
+                    urls.len(),
+                    url_str
+                ));
             }
         }
 
@@ -239,7 +244,10 @@ pub fn generate_crawl_report(results: &[CrawlResult]) -> String {
     for result in results {
         if let Ok(url) = Url::parse(&result.url) {
             if let Some(host) = url.host_str() {
-                by_host.entry(host.to_string()).or_insert_with(Vec::new).push(result);
+                by_host
+                    .entry(host.to_string())
+                    .or_insert_with(Vec::new)
+                    .push(result);
             }
         }
     }

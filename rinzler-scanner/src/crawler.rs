@@ -76,12 +76,10 @@ impl Crawler {
         let parsed_url = Url::parse(start_url)
             .map_err(|e| ScanError::InvalidUrl(format!("Invalid URL: {}", e)))?;
 
-        let base_domain = self.base_domain.clone().unwrap_or_else(|| {
-            parsed_url
-                .host_str()
-                .unwrap_or("unknown")
-                .to_string()
-        });
+        let base_domain = self
+            .base_domain
+            .clone()
+            .unwrap_or_else(|| parsed_url.host_str().unwrap_or("unknown").to_string());
 
         // Mark initial URL as visited
         {
@@ -94,7 +92,12 @@ impl Crawler {
         let mut depth = 0;
 
         while depth < self.max_depth && !to_crawl.is_empty() {
-            info!("Crawling depth {}/{}, {} URLs to process", depth + 1, self.max_depth, to_crawl.len());
+            info!(
+                "Crawling depth {}/{}, {} URLs to process",
+                depth + 1,
+                self.max_depth,
+                to_crawl.len()
+            );
 
             // Process URLs in parallel using stream
             let urls_to_process: Vec<_> = to_crawl.drain(..).collect();
