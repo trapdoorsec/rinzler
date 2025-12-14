@@ -100,7 +100,7 @@ impl Crawler {
             );
 
             // Process URLs in parallel using stream
-            let urls_to_process: Vec<_> = to_crawl.drain(..).collect();
+            let urls_to_process: Vec<_> = std::mem::take(&mut to_crawl);
 
             let results: Vec<_> = stream::iter(urls_to_process.into_iter().enumerate())
                 .map(|(worker_id, url)| {
@@ -214,20 +214,18 @@ impl Crawler {
         let mut links = Vec::new();
 
         for element in document.select(&link_selector) {
-            if let Some(href) = element.value().attr("href") {
-                if let Some(absolute_url) = self.resolve_url(current_url, href) {
+            if let Some(href) = element.value().attr("href")
+                && let Some(absolute_url) = self.resolve_url(current_url, href) {
                     if self.is_same_domain(&absolute_url, base_domain) {
                         links.push(absolute_url);
                     } else if !self.auto_follow {
                         // Cross-domain link found and auto_follow is false
-                        if let Some(ref callback) = self.cross_domain_callback {
-                            if callback(absolute_url.clone(), base_domain.to_string()) {
+                        if let Some(ref callback) = self.cross_domain_callback
+                            && callback(absolute_url.clone(), base_domain.to_string()) {
                                 links.push(absolute_url);
                             }
-                        }
                     }
                 }
-            }
         }
 
         // Count forms
@@ -263,11 +261,10 @@ impl Crawler {
     }
 
     fn is_same_domain(&self, url: &str, base_domain: &str) -> bool {
-        if let Ok(parsed) = Url::parse(url) {
-            if let Some(host) = parsed.host_str() {
+        if let Ok(parsed) = Url::parse(url)
+            && let Some(host) = parsed.host_str() {
                 return host == base_domain || host.ends_with(&format!(".{}", base_domain));
             }
-        }
         false
     }
 

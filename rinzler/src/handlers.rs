@@ -251,14 +251,14 @@ fn create_configuration_assets(
 ) {
     println!("{} Creating directory structure...", "→".blue());
 
-    fs::create_dir_all(&rinzler_config_dir).expect("Failed to create config directory");
+    fs::create_dir_all(rinzler_config_dir).expect("Failed to create config directory");
     println!(
         "  {} {}",
         "✓".green(),
         rinzler_config_dir.display().to_string().bright_white()
     );
 
-    fs::create_dir_all(&wordlist_dir).expect("Failed to create wordlists directory");
+    fs::create_dir_all(wordlist_dir).expect("Failed to create wordlists directory");
     println!(
         "  {} {}",
         "✓".green(),
@@ -266,7 +266,7 @@ fn create_configuration_assets(
     );
 
     println!("{} Installing default wordlist...", "→".blue());
-    fs::write(&wordlist_path, DEFAULT_WORDLIST).expect("Failed to write default wordlist");
+    fs::write(wordlist_path, DEFAULT_WORDLIST).expect("Failed to write default wordlist");
 
     let wordlist_size = DEFAULT_WORDLIST.len();
     let line_count = DEFAULT_WORDLIST.lines().count();

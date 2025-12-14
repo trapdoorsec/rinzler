@@ -34,12 +34,12 @@ pub type CrawlProgressCallback = Arc<dyn Fn(String) + Send + Sync>;
 pub fn extract_url_path(url: &str) -> String {
     Url::parse(url)
         .ok()
-        .and_then(|u| {
+        .map(|u| {
             let path = u.path().to_string();
             if path.is_empty() || path == "/" {
-                Some("/".to_string())
+                "/".to_string()
             } else {
-                Some(path)
+                path
             }
         })
         .unwrap_or_else(|| url.to_string())
@@ -68,8 +68,8 @@ pub async fn execute_crawl(
     let worker_bars: Arc<Mutex<HashMap<usize, ProgressBar>>> = Arc::new(Mutex::new(HashMap::new()));
 
     // Create progress bars for each worker (only if enabled)
-    if show_progress_bars {
-        if let Some(ref multi_progress) = m {
+    if show_progress_bars
+        && let Some(ref multi_progress) = m {
             for i in 0..threads {
                 let pb = multi_progress.add(ProgressBar::new_spinner());
                 pb.set_style(
@@ -82,7 +82,6 @@ pub async fn execute_crawl(
                 worker_bars.lock().await.insert(i, pb);
             }
         }
-    }
 
     // Progress callback for worker updates (only if progress bars enabled)
     let internal_progress_callback: rinzler_scanner::ProgressCallback = if show_progress_bars {
@@ -91,11 +90,10 @@ pub async fn execute_crawl(
             let path = extract_url_path(&url);
 
             // Use try_lock to avoid blocking in async context
-            if let Ok(bars) = worker_bars_clone.try_lock() {
-                if let Some(pb) = bars.get(&worker_id) {
+            if let Ok(bars) = worker_bars_clone.try_lock()
+                && let Some(pb) = bars.get(&worker_id) {
                     pb.set_message(format!("{}: {}", worker_id, path));
                 }
-            }
         })
     } else {
         // No-op callback when progress bars are disabled
@@ -183,8 +181,8 @@ pub async fn execute_crawl(
     // Crawl each URL
     let mut all_results = Vec::new();
     for (idx, url_str) in urls.iter().enumerate() {
-        if let Some(ref callback) = progress_callback {
-            if urls.len() > 1 {
+        if let Some(ref callback) = progress_callback
+            && urls.len() > 1 {
                 callback(format!(
                     "Crawling host {}/{}: {}",
                     idx + 1,
@@ -192,7 +190,6 @@ pub async fn execute_crawl(
                     url_str
                 ));
             }
-        }
 
         match crawler.crawl(url_str, threads).await {
             Ok(results) => {
@@ -242,14 +239,13 @@ pub fn generate_crawl_report(results: &[CrawlResult]) -> String {
         std::collections::HashMap::new();
 
     for result in results {
-        if let Ok(url) = Url::parse(&result.url) {
-            if let Some(host) = url.host_str() {
+        if let Ok(url) = Url::parse(&result.url)
+            && let Some(host) = url.host_str() {
                 by_host
                     .entry(host.to_string())
-                    .or_insert_with(Vec::new)
+                    .or_default()
                     .push(result);
             }
-        }
     }
 
     // Display results grouped by host
@@ -274,11 +270,10 @@ pub fn generate_crawl_report(results: &[CrawlResult]) -> String {
             let mut line = format!("  {} {}", status_str, path);
 
             // Only show MIME type if it's not text/html
-            if let Some(ref content_type) = result.content_type {
-                if content_type != "text/html" {
+            if let Some(ref content_type) = result.content_type
+                && content_type != "text/html" {
                     line.push_str(&format!(" \x1b[90m{}\x1b[0m", content_type));
                 }
-            }
 
             report.push_str(&line);
             report.push('\n');
