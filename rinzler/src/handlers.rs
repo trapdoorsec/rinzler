@@ -95,7 +95,11 @@ pub fn handle_init(args: &ArgMatches) {
     let user_config_root = rinzler_config_dir.parent().expect("Invalid database path");
 
     println!("{} Parsed arguments", "✓".green().bold());
-    println!("{} Target: {}", "→".blue(), rinzler_config_dir.display().to_string().bright_white());
+    println!(
+        "{} Target: {}",
+        "→".blue(),
+        rinzler_config_dir.display().to_string().bright_white()
+    );
     println!();
 
     let dir_exists = rinzler_config_dir.exists();
@@ -108,13 +112,24 @@ pub fn handle_init(args: &ArgMatches) {
         println!("{}", "⚠ WARNING".yellow().bold());
         println!("Configuration directory already exists:");
         if dir_exists {
-            println!("  {} {}", "•".yellow(), user_config_root.display().to_string().bright_white());
+            println!(
+                "  {} {}",
+                "•".yellow(),
+                user_config_root.display().to_string().bright_white()
+            );
         }
         if wordlist_exists {
-            println!("  {} {}", "•".yellow(), wordlist_path.display().to_string().bright_white());
+            println!(
+                "  {} {}",
+                "•".yellow(),
+                wordlist_path.display().to_string().bright_white()
+            );
         }
         println!();
-        println!("{}", "This operation will overwrite existing files.".yellow());
+        println!(
+            "{}",
+            "This operation will overwrite existing files.".yellow()
+        );
 
         let response = print_prompt("Do you want to continue? [y/N]:");
         println!();
@@ -131,7 +146,11 @@ pub fn handle_init(args: &ArgMatches) {
     let install_wordlist = if !force {
         println!("{}", "WORDLIST SETUP".bright_blue().bold());
         println!("Rinzler includes a default API endpoint wordlist.");
-        println!("{} {}", "Target:".blue(), wordlist_path.display().to_string().bright_white());
+        println!(
+            "{} {}",
+            "Target:".blue(),
+            wordlist_path.display().to_string().bright_white()
+        );
         println!();
 
         let response = print_prompt("Would you like to install it? [Y/n]:");
@@ -147,13 +166,20 @@ pub fn handle_init(args: &ArgMatches) {
         create_configuration_assets(&rinzler_config_dir, &wordlist_dir, &wordlist_path);
     } else {
         println!("{} Skipping wordlist installation", "→".blue());
-        println!("{} Manual wordlist location: {}", "ℹ".blue(), wordlist_dir.display().to_string().bright_white());
+        println!(
+            "{} Manual wordlist location: {}",
+            "ℹ".blue(),
+            wordlist_dir.display().to_string().bright_white()
+        );
         println!();
     }
 
     // Handle existing database in force mode
     if force && Database::exists(db_path) {
-        println!("{} Deleting existing database (force mode)", "→".yellow().bold());
+        println!(
+            "{} Deleting existing database (force mode)",
+            "→".yellow().bold()
+        );
         Database::drop(db_path);
         println!("{} Existing database removed", "✓".green().bold());
         println!();
@@ -163,7 +189,11 @@ pub fn handle_init(args: &ArgMatches) {
     if Database::exists(db_path) && !force {
         println!("{}", "⚠ WARNING".yellow().bold());
         println!("Database already exists at:");
-        println!("  {} {}", "•".yellow(), db_path.display().to_string().bright_white());
+        println!(
+            "  {} {}",
+            "•".yellow(),
+            db_path.display().to_string().bright_white()
+        );
         println!();
 
         let response = print_prompt("Would you like to overwrite it? [Y/n]:");
@@ -182,7 +212,11 @@ pub fn handle_init(args: &ArgMatches) {
     if !Database::exists(db_path) {
         println!("{} Creating database...", "→".blue());
         Database::new(db_path).expect("Failed to create database");
-        println!("{} Database initialized: {}", "✓".green().bold(), db_path.display().to_string().bright_white());
+        println!(
+            "{} Database initialized: {}",
+            "✓".green().bold(),
+            db_path.display().to_string().bright_white()
+        );
     }
 
     println!();
@@ -190,10 +224,22 @@ pub fn handle_init(args: &ArgMatches) {
     println!("{}", "  INITIALIZATION COMPLETE".green().bold());
     print_divider();
     println!();
-    println!("{} Config directory: {}", "✓".green().bold(), user_config_root.display().to_string().bright_white());
-    println!("{} Database: {}", "✓".green().bold(), db_path.display().to_string().bright_white());
+    println!(
+        "{} Config directory: {}",
+        "✓".green().bold(),
+        user_config_root.display().to_string().bright_white()
+    );
+    println!(
+        "{} Database: {}",
+        "✓".green().bold(),
+        db_path.display().to_string().bright_white()
+    );
     if install_wordlist {
-        println!("{} Wordlist: {}", "✓".green().bold(), wordlist_path.display().to_string().bright_white());
+        println!(
+            "{} Wordlist: {}",
+            "✓".green().bold(),
+            wordlist_path.display().to_string().bright_white()
+        );
     }
     println!();
 }
@@ -206,17 +252,26 @@ fn create_configuration_assets(
     println!("{} Creating directory structure...", "→".blue());
 
     fs::create_dir_all(&rinzler_config_dir).expect("Failed to create config directory");
-    println!("  {} {}", "✓".green(), rinzler_config_dir.display().to_string().bright_white());
+    println!(
+        "  {} {}",
+        "✓".green(),
+        rinzler_config_dir.display().to_string().bright_white()
+    );
 
     fs::create_dir_all(&wordlist_dir).expect("Failed to create wordlists directory");
-    println!("  {} {}", "✓".green(), wordlist_dir.display().to_string().bright_white());
+    println!(
+        "  {} {}",
+        "✓".green(),
+        wordlist_dir.display().to_string().bright_white()
+    );
 
     println!("{} Installing default wordlist...", "→".blue());
     fs::write(&wordlist_path, DEFAULT_WORDLIST).expect("Failed to write default wordlist");
 
     let wordlist_size = DEFAULT_WORDLIST.len();
     let line_count = DEFAULT_WORDLIST.lines().count();
-    println!("  {} {} ({} entries, {} bytes)",
+    println!(
+        "  {} {} ({} entries, {} bytes)",
         "✓".green().bold(),
         wordlist_path.display().to_string().bright_white(),
         line_count.to_string().cyan(),

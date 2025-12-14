@@ -7,7 +7,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.1.12-alpha-251215015328"
+version = "0.1.12-alpha-251215015639"
 edition = "2024"
 description = "Rinzler - a somewhat intelligent API scanner"
 authors = ["akses0 <akses0@pm.me>"]
