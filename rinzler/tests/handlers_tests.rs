@@ -37,7 +37,7 @@ fn test_load_urls_from_file() -> Result<(), Box<dyn std::error::Error>> {
     let mut temp_file = NamedTempFile::new()?;
     writeln!(temp_file, "https://example.com")?;
     writeln!(temp_file, "httpbin.org")?;
-    writeln!(temp_file, "")?; // Empty line
+    writeln!(temp_file)?; // Empty line
     writeln!(temp_file, "https://api.example.com")?;
 
     let path = PathBuf::from(temp_file.path());
@@ -54,7 +54,7 @@ fn test_load_urls_from_file() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 fn test_load_urls_from_file_empty() {
     let mut temp_file = NamedTempFile::new().unwrap();
-    writeln!(temp_file, "").unwrap();
+    writeln!(temp_file).unwrap();
     writeln!(temp_file, "   ").unwrap();
 
     let path = PathBuf::from(temp_file.path());

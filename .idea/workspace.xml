@@ -22,6 +22,7 @@
       <change beforePath="$PROJECT_DIR$/Cargo.toml" beforeDir="false" afterPath="$PROJECT_DIR$/Cargo.toml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/rinzler-core/Cargo.toml" beforeDir="false" afterPath="$PROJECT_DIR$/rinzler-core/Cargo.toml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/rinzler/Cargo.toml" beforeDir="false" afterPath="$PROJECT_DIR$/rinzler/Cargo.toml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/rinzler/tests/handlers_tests.rs" beforeDir="false" afterPath="$PROJECT_DIR$/rinzler/tests/handlers_tests.rs" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -218,7 +219,7 @@
       <workItem from="1765094046424" duration="9535000" />
       <workItem from="1765459496446" duration="50971000" />
       <workItem from="1765713762418" duration="277000" />
-      <workItem from="1765714393751" duration="8502000" />
+      <workItem from="1765714393751" duration="8792000" />
     </task>
     <servers />
   </component>
