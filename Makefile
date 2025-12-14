@@ -2,6 +2,7 @@
 # A somewhat intelligent Web API scanner
 
 .PHONY: help build test clean fmt clippy check run install release publish doc ci all install-tools
+.PHONY: bump-major bump-minor bump-patch version-set tag-release publish-full
 
 # Default target
 .DEFAULT_GOAL := help
@@ -93,12 +94,10 @@ doc-build: ## Generate documentation without opening
 
 publish-dry: ## Dry-run publish to crates.io
 	@echo "$(YELLOW)Dry-run publishing to crates.io...$(RESET)"
-	@echo "$(YELLOW)Checking rinzler-core...$(RESET)"
-	cd rinzler-core && cargo publish --dry-run --allow-dirty
 	@echo "$(YELLOW)Checking rinzler-scanner...$(RESET)"
 	cd rinzler-scanner && cargo publish --dry-run --allow-dirty
-	@echo "$(YELLOW)Checking rinzler-tui...$(RESET)"
-	cd rinzler-tui && cargo publish --dry-run --allow-dirty
+	@echo "$(YELLOW)Checking rinzler-core...$(RESET)"
+	cd rinzler-core && cargo publish --dry-run --allow-dirty
 	@echo "$(YELLOW)Checking rinzler...$(RESET)"
 	cd rinzler && cargo publish --dry-run --allow-dirty
 	@echo "$(GREEN)Dry-run complete!$(RESET)"
@@ -113,20 +112,86 @@ publish: ## Publish all crates to crates.io (requires auth)
 	@echo ""
 	@read -p "Are you sure you want to publish? [y/N]: " confirm; \
 	if [ "$$confirm" = "y" ] || [ "$$confirm" = "Y" ]; then \
-		echo "$(GREEN)Publishing rinzler-core...$(RESET)"; \
-		cd rinzler-core && cargo publish; \
-		sleep 10; \
 		echo "$(GREEN)Publishing rinzler-scanner...$(RESET)"; \
 		cd rinzler-scanner && cargo publish; \
-		sleep 10; \
-		echo "$(GREEN)Publishing rinzler-tui...$(RESET)"; \
-		cd rinzler-tui && cargo publish; \
-		sleep 10; \
+		echo "$(YELLOW)Waiting 30s for crates.io to index...$(RESET)"; \
+		sleep 30; \
+		echo "$(GREEN)Publishing rinzler-core...$(RESET)"; \
+		cd rinzler-core && cargo publish; \
+		echo "$(YELLOW)Waiting 30s for crates.io to index...$(RESET)"; \
+		sleep 30; \
 		echo "$(GREEN)Publishing rinzler...$(RESET)"; \
 		cd rinzler && cargo publish; \
 		echo "$(GREEN)Publish complete!$(RESET)"; \
 	else \
 		echo "$(YELLOW)Publish cancelled.$(RESET)"; \
+	fi
+
+publish-full: ## Complete release workflow: bump, test, tag, publish, and push
+	@echo "$(CYAN)═══════════════════════════════════════════════$(RESET)"
+	@echo "$(CYAN)  RINZLER RELEASE WORKFLOW$(RESET)"
+	@echo "$(CYAN)═══════════════════════════════════════════════$(RESET)"
+	@echo ""
+	@VERSION=$$(grep -m 1 '^version' Cargo.toml | awk -F'"' '{print $$2}'); \
+	echo "$(YELLOW)Current version: $$VERSION$(RESET)"; \
+	echo "$(YELLOW)What type of release?$(RESET)"; \
+	echo "  1) Patch (0.1.2 -> 0.1.3)"; \
+	echo "  2) Minor (0.1.2 -> 0.2.0)"; \
+	echo "  3) Major (0.1.2 -> 1.0.0)"; \
+	echo "  4) Custom version"; \
+	echo ""; \
+	read -p "Select [1-4]: " choice; \
+	case $$choice in \
+		1) $(MAKE) bump-patch ;; \
+		2) $(MAKE) bump-minor ;; \
+		3) $(MAKE) bump-major ;; \
+		4) read -p "Enter version (e.g., 1.0.0-beta): " version; \
+		   $(MAKE) version-set VERSION=$$version ;; \
+		*) echo "$(RED)Invalid choice$(RESET)"; exit 1 ;; \
+	esac; \
+	NEW_VERSION=$$(grep -m 1 '^version' Cargo.toml | awk -F'"' '{print $$2}'); \
+	echo ""; \
+	echo "$(GREEN)Version updated to $$NEW_VERSION$(RESET)"; \
+	echo ""; \
+	echo "$(CYAN)Running full test suite...$(RESET)"; \
+	if ! $(MAKE) ci; then \
+		echo "$(RED)Tests failed! Aborting release.$(RESET)"; \
+		exit 1; \
+	fi; \
+	echo ""; \
+	echo "$(CYAN)Running dry-run publish...$(RESET)"; \
+	if ! $(MAKE) publish-dry; then \
+		echo "$(RED)Dry-run failed! Aborting release.$(RESET)"; \
+		exit 1; \
+	fi; \
+	echo ""; \
+	echo "$(YELLOW)Ready to publish version $$NEW_VERSION$(RESET)"; \
+	echo "$(YELLOW)This will:$(RESET)"; \
+	echo "  1. Commit version changes"; \
+	echo "  2. Create and push git tag v$$NEW_VERSION"; \
+	echo "  3. Publish to crates.io"; \
+	echo "  4. Push commits to remote"; \
+	echo ""; \
+	read -p "Proceed with release? [y/N]: " confirm; \
+	if [ "$$confirm" = "y" ] || [ "$$confirm" = "Y" ]; then \
+		echo ""; \
+		echo "$(GREEN)Committing version changes...$(RESET)"; \
+		git add Cargo.toml Cargo.lock rinzler/Cargo.toml rinzler-core/Cargo.toml; \
+		git commit -m "Release v$$NEW_VERSION" --no-verify; \
+		echo "$(GREEN)Creating and pushing tag...$(RESET)"; \
+		$(MAKE) tag-release; \
+		echo "$(GREEN)Publishing to crates.io...$(RESET)"; \
+		$(MAKE) publish; \
+		echo "$(GREEN)Pushing commits...$(RESET)"; \
+		git push; \
+		echo ""; \
+		echo "$(CYAN)═══════════════════════════════════════════════$(RESET)"; \
+		echo "$(GREEN)  RELEASE v$$NEW_VERSION COMPLETE!$(RESET)"; \
+		echo "$(CYAN)═══════════════════════════════════════════════$(RESET)"; \
+	else \
+		echo "$(YELLOW)Release cancelled.$(RESET)"; \
+		echo "$(YELLOW)Note: Version was bumped but not committed.$(RESET)"; \
+		echo "$(YELLOW)Run 'git restore .' to revert changes.$(RESET)"; \
 	fi
 
 ci: fmt-check clippy test ## Run CI pipeline (fmt, clippy, test)
@@ -177,7 +242,36 @@ bench: ## Run benchmarks
 
 version: ## Show current version
 	@echo "$(CYAN)Rinzler Version:$(RESET)"
-	@grep '^version' Cargo.toml | head -1 | awk -F'"' '{print $$2}'
+	@grep -m 1 '^version' Cargo.toml | awk -F'"' '{print $$2}'
+
+bump-patch: ## Bump patch version (0.1.2 -> 0.1.3)
+	@echo "$(GREEN)Bumping patch version...$(RESET)"
+	@./scripts/bump-version.sh patch
+
+bump-minor: ## Bump minor version (0.1.2 -> 0.2.0)
+	@echo "$(GREEN)Bumping minor version...$(RESET)"
+	@./scripts/bump-version.sh minor
+
+bump-major: ## Bump major version (0.1.2 -> 1.0.0)
+	@echo "$(GREEN)Bumping major version...$(RESET)"
+	@./scripts/bump-version.sh major
+
+version-set: ## Set specific version (usage: make version-set VERSION=1.0.0-beta)
+	@if [ -z "$(VERSION)" ]; then \
+		echo "$(RED)ERROR: VERSION not set$(RESET)"; \
+		echo "Usage: make version-set VERSION=1.0.0-beta"; \
+		exit 1; \
+	fi
+	@echo "$(GREEN)Setting version to $(VERSION)...$(RESET)"
+	@./scripts/bump-version.sh set $(VERSION)
+
+tag-release: ## Create and push git tag for current version
+	@VERSION=$$(grep -m 1 '^version' Cargo.toml | awk -F'"' '{print $$2}'); \
+	echo "$(GREEN)Creating tag v$$VERSION...$(RESET)"; \
+	git tag -a "v$$VERSION" -m "Release v$$VERSION"; \
+	echo "$(GREEN)Pushing tag to remote...$(RESET)"; \
+	git push origin "v$$VERSION"; \
+	echo "$(GREEN)Tag v$$VERSION created and pushed!$(RESET)"
 
 deps-tree: ## Show dependency tree
 	@echo "$(GREEN)Dependency tree:$(RESET)"
