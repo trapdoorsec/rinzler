@@ -1,5 +1,7 @@
 pub mod crawl;
 pub mod data;
+pub mod report;
+pub mod security;
 mod map;
 mod model;
 

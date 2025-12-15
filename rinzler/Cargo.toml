@@ -11,8 +11,8 @@ keywords = ["security", "api", "scanner", "pentesting", "fuzzer"]
 categories = ["command-line-utilities", "development-tools"]
 
 [dependencies]
-rinzler-core = { version = "0.1.18-alpha-251215020518", path = "../rinzler-core" }
-rinzler-scanner = { version = "0.1.18-alpha-251215020518", path = "../rinzler-scanner" }
+rinzler-core = { version = "0.1.19-alpha-251216023011", path = "../rinzler-core" }
+rinzler-scanner = { version = "0.1.19-alpha-251216023011", path = "../rinzler-scanner" }
 # Just reference workspace deps (no versions needed!)
 url.workspace = true
 clap.workspace = true
@@ -24,6 +24,7 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 pager.workspace = true
 colored.workspace = true
+serde_json.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

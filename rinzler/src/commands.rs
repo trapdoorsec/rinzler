@@ -100,6 +100,25 @@ pub(crate) fn command_argument_builder() -> clap::Command {
                         .help("Automatically follow all cross-domain links without prompting")
                         .action(clap::ArgAction::SetTrue)
                         .conflicts_with("follow"),
+                )
+                .arg(
+                    arg!(-o --"output" <PATH>)
+                        .required(false)
+                        .help("Save report to file (default: display to screen)")
+                        .value_parser(clap::value_parser!(std::path::PathBuf)),
+                )
+                .arg(
+                    arg!(-f --"format" <FORMAT>)
+                        .required(false)
+                        .help("Report format: text, json, csv, html, markdown")
+                        .value_parser(["text", "json", "csv", "html", "markdown"])
+                        .default_value("text"),
+                )
+                .arg(
+                    arg!(--"include-sitemap")
+                        .required(false)
+                        .help("Include a visual sitemap tree in the report")
+                        .action(clap::ArgAction::SetTrue),
                 ),
         )
         .subcommand(

@@ -343,13 +343,46 @@ pub async fn handle_crawl(sub_matches: &ArgMatches) {
     };
     println!("Cross-domain: {}\n", follow_mode_str);
 
+    // Open database
+    let db_path = shellexpand::tilde("~/.config/rinzler/rinzler.db");
+    let db = match Database::new(Path::new(db_path.as_ref())) {
+        Ok(db) => db,
+        Err(e) => {
+            eprintln!("✗ Failed to open database: {}", e);
+            eprintln!("  Run 'rinzler init' first to create the database.");
+            std::process::exit(1);
+        }
+    };
+
+    // Create session
+    let seed_urls_json = serde_json::to_string(&urls).unwrap();
+    let session_id = match db.create_session("crawl", &seed_urls_json) {
+        Ok(id) => id,
+        Err(e) => {
+            eprintln!("✗ Failed to create session: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    // Create map
+    let map_id = match db.create_map(&session_id) {
+        Ok(id) => id,
+        Err(e) => {
+            eprintln!("✗ Failed to create map: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    println!("Session ID: {}", session_id.bright_white());
+    println!();
+
     // Create crawl options
     let options = CrawlOptions {
         urls,
         threads,
         max_depth: 3,
         follow_mode,
-        show_progress_bars: true, // Enable progress bars in CLI mode
+        show_progress_bars: true,
     };
 
     // Execute crawl with progress callback
@@ -361,16 +394,151 @@ pub async fn handle_crawl(sub_matches: &ArgMatches) {
         Ok(results) => results,
         Err(e) => {
             eprintln!("✗ Crawl failed: {}", e);
+            let _ = db.fail_session(&session_id);
             std::process::exit(1);
         }
     };
 
     println!("\n✓ Crawl complete!\n");
+    println!("{} Persisting results to database...", "→".blue());
+
+    // Persist results to database
+    let mut findings_count = 0;
+    for result in &all_results {
+        // Extract domain from URL
+        let domain = Url::parse(&result.url)
+            .ok()
+            .and_then(|u| u.host_str().map(String::from))
+            .unwrap_or_else(|| "unknown".to_string());
+
+        // Create node structure
+        let node = rinzler_core::data::CrawlNode {
+            url: result.url.clone(),
+            domain,
+            status_code: result.status_code,
+            content_type: result.content_type.clone(),
+            content_length: None,
+            response_time_ms: None,
+            title: None,
+            forms_count: result.forms_found,
+            service_type: None,
+            headers: None,
+            body_sample: None,
+        };
+
+        // Insert node
+        match db.insert_node(&map_id, &node) {
+            Ok(node_id) => {
+                // Run security checks
+                let findings = rinzler_core::security::analyze_crawl_result(result, node_id);
+
+                // Insert findings
+                for finding in findings {
+                    if let Ok(_) = db.insert_finding(&session_id, &finding) {
+                        findings_count += 1;
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("  {} Failed to insert node {}: {}", "⚠".yellow(), result.url, e);
+            }
+        }
+    }
+
+    // Complete session
+    if let Err(e) = db.complete_session(&session_id) {
+        eprintln!("✗ Failed to complete session: {}", e);
+    }
+
+    println!("{} Saved {} nodes and {} findings", "✓".green().bold(), all_results.len(), findings_count);
+    println!();
 
     // Generate and display report
     let report = generate_crawl_report(&all_results);
-    Pager::with_pager("less -R").setup();
-    print!("{}", report);
+
+    if findings_count > 0 {
+        println!("{}", "═".repeat(60).bright_yellow());
+        println!("{}", "  SECURITY FINDINGS".yellow().bold());
+        println!("{}", "═".repeat(60).bright_yellow());
+        println!();
+
+        // Display findings summary
+        if let Ok(severity_counts) = db.get_findings_count_by_severity(&session_id) {
+            for (severity, count) in severity_counts {
+                let severity_colored = match severity.as_str() {
+                    "critical" => severity.red().bold(),
+                    "high" => severity.red(),
+                    "medium" => severity.yellow(),
+                    "low" => severity.blue(),
+                    _ => severity.white(),
+                };
+                println!("  {} {}: {}", "•".white(), severity_colored, count);
+            }
+        }
+        println!();
+    }
+
+    // Handle report generation and output
+    let output_path = sub_matches.get_one::<std::path::PathBuf>("output");
+    let format = sub_matches.get_one::<String>("format").map(|s| s.as_str()).unwrap_or("text");
+    let include_sitemap = sub_matches.get_flag("include-sitemap");
+
+    if output_path.is_some() || findings_count > 0 {
+        println!("{} Generating {} report...", "→".blue(), format);
+
+        match rinzler_core::report::gather_report_data(&db, &session_id, include_sitemap) {
+            Ok(report_data) => {
+                let report_content = match format {
+                    "text" => rinzler_core::report::generate_text_report(&report_data),
+                    "json" => {
+                        println!("  {} JSON format not yet implemented", "⚠".yellow());
+                        String::new()
+                    }
+                    "csv" => {
+                        println!("  {} CSV format not yet implemented", "⚠".yellow());
+                        String::new()
+                    }
+                    "html" => {
+                        println!("  {} HTML format not yet implemented", "⚠".yellow());
+                        String::new()
+                    }
+                    "markdown" => {
+                        println!("  {} Markdown format not yet implemented", "⚠".yellow());
+                        String::new()
+                    }
+                    _ => {
+                        eprintln!("  {} Unknown format: {}", "✗".red(), format);
+                        String::new()
+                    }
+                };
+
+                if !report_content.is_empty() {
+                    if let Some(path) = output_path {
+                        match rinzler_core::report::save_report(&report_content, path) {
+                            Ok(_) => {
+                                println!("{} Report saved to: {}", "✓".green().bold(), path.display().to_string().bright_white());
+                            }
+                            Err(e) => {
+                                eprintln!("{} Failed to save report: {}", "✗".red(), e);
+                            }
+                        }
+                    } else {
+                        // Display report in pager
+                        println!();
+                        Pager::with_pager("less -R").setup();
+                        print!("{}", report_content);
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("{} Failed to generate report: {}", "✗".red(), e);
+            }
+        }
+    } else {
+        // No findings and no output file - just show crawl report
+        Pager::with_pager("less -R").setup();
+        print!("{}", report);
+    }
 }
 
 pub async fn handle_fuzz(sub_matches: &ArgMatches) {

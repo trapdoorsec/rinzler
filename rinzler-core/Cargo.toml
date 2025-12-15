@@ -14,7 +14,11 @@ categories = ["command-line-utilities", "development-tools"]
 
 [dependencies]
 rusqlite.workspace = true
-rinzler-scanner = { version = "0.1.18-alpha-251215020518", path = "../rinzler-scanner" }
+rinzler-scanner = { version = "0.1.19-alpha-251216023011", path = "../rinzler-scanner" }
 tokio.workspace = true
 url.workspace = true
 indicatif.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+uuid = { version = "1.10", features = ["v4"] }
+chrono.workspace = true
