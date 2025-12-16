@@ -2,7 +2,7 @@
 
 use crate::data::Database;
 use rusqlite::Result;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
@@ -84,12 +84,16 @@ pub struct ScanInfo {
     pub seed_urls: String,
 }
 
-pub fn gather_report_data(db: &Database, session_id: &str, include_sitemap: bool) -> Result<ReportData> {
+pub fn gather_report_data(
+    db: &Database,
+    session_id: &str,
+    include_sitemap: bool,
+) -> Result<ReportData> {
     // Get session info
     let scan_info = {
         let conn = db.get_connection();
         let mut stmt = conn.prepare(
-            "SELECT start_time, end_time, status, seed_urls FROM crawl_sessions WHERE id = ?1"
+            "SELECT start_time, end_time, status, seed_urls FROM crawl_sessions WHERE id = ?1",
         )?;
 
         stmt.query_row([session_id], |row| {
@@ -141,24 +145,25 @@ pub fn gather_report_data(db: &Database, session_id: &str, include_sitemap: bool
              WHEN 'medium' THEN 3
              WHEN 'low' THEN 4
              WHEN 'info' THEN 5
-         END, f.id"
+         END, f.id",
     )?;
 
-    let findings = stmt.query_map([session_id], |row| {
-        Ok(FindingData {
-            id: row.get(0)?,
-            severity: row.get(1)?,
-            title: row.get(2)?,
-            description: row.get(3)?,
-            url: row.get(4)?,
-            finding_type: row.get(5)?,
-            cwe_id: row.get(6)?,
-            owasp_category: row.get(7)?,
-            impact: row.get(8)?,
-            remediation: row.get(9)?,
-        })
-    })?
-    .collect::<Result<Vec<_>>>()?;
+    let findings = stmt
+        .query_map([session_id], |row| {
+            Ok(FindingData {
+                id: row.get(0)?,
+                severity: row.get(1)?,
+                title: row.get(2)?,
+                description: row.get(3)?,
+                url: row.get(4)?,
+                finding_type: row.get(5)?,
+                cwe_id: row.get(6)?,
+                owasp_category: row.get(7)?,
+                impact: row.get(8)?,
+                remediation: row.get(9)?,
+            })
+        })?
+        .collect::<Result<Vec<_>>>()?;
 
     // Optionally gather sitemap data
     let sitemap_nodes = if include_sitemap {
@@ -168,17 +173,18 @@ pub fn gather_report_data(db: &Database, session_id: &str, include_sitemap: bool
              FROM nodes n
              JOIN maps m ON n.map_id = m.id
              WHERE m.session_id = ?1
-             ORDER BY n.url"
+             ORDER BY n.url",
         )?;
 
-        let nodes = stmt.query_map([session_id], |row| {
-            Ok(SitemapNode {
-                url: row.get(0)?,
-                status_code: row.get::<_, Option<u16>>(1)?.unwrap_or(0),
-                content_type: row.get(2)?,
-            })
-        })?
-        .collect::<Result<Vec<_>>>()?;
+        let nodes = stmt
+            .query_map([session_id], |row| {
+                Ok(SitemapNode {
+                    url: row.get(0)?,
+                    status_code: row.get::<_, Option<u16>>(1)?.unwrap_or(0),
+                    content_type: row.get(2)?,
+                })
+            })?
+            .collect::<Result<Vec<_>>>()?;
 
         Some(nodes)
     } else {
@@ -199,14 +205,21 @@ pub fn generate_text_report(data: &ReportData) -> String {
     let mut report = String::new();
 
     // Header
-    report.push_str("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+    report.push_str(
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n",
+    );
     report.push_str("                        RINZLER SECURITY SCAN REPORT\n");
-    report.push_str("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n");
+    report.push_str(
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n",
+    );
 
     // Session info
     report.push_str(&format!("Session ID:   {}\n", data.session_id));
     report.push_str(&format!("Status:       {}\n", data.status_to_string()));
-    report.push_str(&format!("Scan Date:    {}\n", data.format_timestamp(data.scan_info.start_time)));
+    report.push_str(&format!(
+        "Scan Date:    {}\n",
+        data.format_timestamp(data.scan_info.start_time)
+    ));
 
     if let Some(end_time) = data.scan_info.end_time {
         let duration = end_time - data.scan_info.start_time;
@@ -215,21 +228,29 @@ pub fn generate_text_report(data: &ReportData) -> String {
 
     report.push_str(&format!("Targets:      {}\n", data.format_targets()));
     report.push_str(&format!("Pages Found:  {}\n", data.total_nodes));
-    report.push_str("\n");
+    report.push('\n');
 
     // Include sitemap if present
     if let Some(ref sitemap_nodes) = data.sitemap_nodes {
-        report.push_str("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+        report.push_str(
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n",
+        );
         report.push_str("SITE MAP\n");
-        report.push_str("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n");
+        report.push_str(
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n",
+        );
         report.push_str(&generate_sitemap_tree(sitemap_nodes));
-        report.push_str("\n");
+        report.push('\n');
     }
 
     // Executive Summary
-    report.push_str("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+    report.push_str(
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n",
+    );
     report.push_str("EXECUTIVE SUMMARY\n");
-    report.push_str("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n");
+    report.push_str(
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n",
+    );
 
     let total_findings = data.severity_counts.critical
         + data.severity_counts.high
@@ -240,32 +261,57 @@ pub fn generate_text_report(data: &ReportData) -> String {
     report.push_str(&format!("Total Findings: {}\n\n", total_findings));
 
     if data.severity_counts.critical > 0 {
-        report.push_str(&format!("  [CRITICAL] {}  (Immediate action required)\n", data.severity_counts.critical));
+        report.push_str(&format!(
+            "  [CRITICAL] {}  (Immediate action required)\n",
+            data.severity_counts.critical
+        ));
     }
     if data.severity_counts.high > 0 {
-        report.push_str(&format!("  [HIGH]     {}  (High priority)\n", data.severity_counts.high));
+        report.push_str(&format!(
+            "  [HIGH]     {}  (High priority)\n",
+            data.severity_counts.high
+        ));
     }
     if data.severity_counts.medium > 0 {
-        report.push_str(&format!("  [MEDIUM]   {}  (Should be addressed)\n", data.severity_counts.medium));
+        report.push_str(&format!(
+            "  [MEDIUM]   {}  (Should be addressed)\n",
+            data.severity_counts.medium
+        ));
     }
     if data.severity_counts.low > 0 {
-        report.push_str(&format!("  [LOW]      {}  (Minor issues)\n", data.severity_counts.low));
+        report.push_str(&format!(
+            "  [LOW]      {}  (Minor issues)\n",
+            data.severity_counts.low
+        ));
     }
     if data.severity_counts.info > 0 {
-        report.push_str(&format!("  [INFO]     {}  (Informational)\n", data.severity_counts.info));
+        report.push_str(&format!(
+            "  [INFO]     {}  (Informational)\n",
+            data.severity_counts.info
+        ));
     }
-    report.push_str("\n");
+    report.push('\n');
 
     // Detailed findings
     if !data.findings.is_empty() {
-        report.push_str("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+        report.push_str(
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n",
+        );
         report.push_str("DETAILED FINDINGS\n");
-        report.push_str("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n");
+        report.push_str(
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n",
+        );
 
         for (idx, finding) in data.findings.iter().enumerate() {
             report.push_str(&format!("[{}] {}\n", idx + 1, finding.title));
-            report.push_str(&format!("Severity:     {}\n", finding.severity.to_uppercase()));
-            report.push_str(&format!("Type:         {}\n", format_finding_type(&finding.finding_type)));
+            report.push_str(&format!(
+                "Severity:     {}\n",
+                finding.severity.to_uppercase()
+            ));
+            report.push_str(&format!(
+                "Type:         {}\n",
+                format_finding_type(&finding.finding_type)
+            ));
             report.push_str(&format!("URL:          {}\n", finding.url));
 
             if let Some(ref cwe) = finding.cwe_id {
@@ -296,9 +342,13 @@ pub fn generate_text_report(data: &ReportData) -> String {
     }
 
     // Footer
-    report.push_str("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+    report.push_str(
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n",
+    );
     report.push_str("                          End of Report\n");
-    report.push_str("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+    report.push_str(
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n",
+    );
     report.push_str("\nGenerated by Rinzler - A somewhat intelligent Web API scanner\n");
     report.push_str("For authorized security testing only.\n\n");
 
@@ -372,8 +422,7 @@ impl ReportData {
 
     fn format_timestamp(&self, timestamp: i64) -> String {
         use chrono::{DateTime, Utc};
-        let datetime = DateTime::<Utc>::from_timestamp(timestamp, 0)
-            .unwrap_or_else(|| Utc::now());
+        let datetime = DateTime::<Utc>::from_timestamp(timestamp, 0).unwrap_or_else(Utc::now);
         datetime.format("%Y-%m-%d %H:%M:%S UTC").to_string()
     }
 
@@ -392,7 +441,8 @@ impl ReportData {
 }
 
 fn format_finding_type(finding_type: &str) -> String {
-    finding_type.replace('_', " ")
+    finding_type
+        .replace('_', " ")
         .split_whitespace()
         .map(|word| {
             let mut chars = word.chars();
@@ -410,13 +460,11 @@ fn wrap_text(text: &str, width: usize, indent: &str) -> String {
     let mut current_line = String::new();
 
     for word in text.split_whitespace() {
-        if current_line.len() + word.len() + 1 > width - indent.len() {
-            if !current_line.is_empty() {
-                result.push_str(indent);
-                result.push_str(&current_line);
-                result.push('\n');
-                current_line.clear();
-            }
+        if current_line.len() + word.len() + 1 > width - indent.len() && !current_line.is_empty() {
+            result.push_str(indent);
+            result.push_str(&current_line);
+            result.push('\n');
+            current_line.clear();
         }
 
         if !current_line.is_empty() {
@@ -497,7 +545,7 @@ fn generate_sitemap_tree(nodes: &[SitemapNode]) -> String {
                 format!("{}{}", host, path)
             } else {
                 // Check if same host as previous
-                let prev_host = url::Url::parse(&nodes[i-1].url)
+                let prev_host = url::Url::parse(&nodes[i - 1].url)
                     .ok()
                     .and_then(|u| u.host_str().map(String::from));
                 if prev_host.as_deref() == Some(host) {
@@ -519,13 +567,17 @@ fn generate_sitemap_tree(nodes: &[SitemapNode]) -> String {
             _ => "?",
         };
 
-        let content_type_short = node.content_type.as_ref()
+        let content_type_short = node
+            .content_type
+            .as_ref()
             .and_then(|ct| ct.split(';').next())
             .and_then(|ct| ct.split('/').nth(1))
             .unwrap_or("?");
 
-        result.push_str(&format!("{}{}  [{} {}] {}\n",
-            prefix, display_url, status_indicator, node.status_code, content_type_short));
+        result.push_str(&format!(
+            "{}{}  [{} {}] {}\n",
+            prefix, display_url, status_indicator, node.status_code, content_type_short
+        ));
     }
 
     result
@@ -533,8 +585,7 @@ fn generate_sitemap_tree(nodes: &[SitemapNode]) -> String {
 
 fn format_iso8601_timestamp(timestamp: i64) -> String {
     use chrono::{DateTime, Utc};
-    let datetime = DateTime::<Utc>::from_timestamp(timestamp, 0)
-        .unwrap_or_else(|| Utc::now());
+    let datetime = DateTime::<Utc>::from_timestamp(timestamp, 0).unwrap_or_else(Utc::now);
     datetime.to_rfc3339()
 }
 

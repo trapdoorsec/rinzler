@@ -1,5 +1,6 @@
 // Fuzzing module for forced browsing / directory enumeration
 
+use colored::Colorize;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use reqwest::Client;
 use std::collections::HashMap;
@@ -17,6 +18,15 @@ pub struct FuzzResult {
     pub status_code: u16,
     pub content_length: Option<u64>,
     pub content_type: Option<String>,
+    pub source: FuzzSource,
+}
+
+/// Source of the fuzz target
+#[derive(Debug, Clone, PartialEq)]
+pub enum FuzzSource {
+    Initial,    // From command line
+    Database,   // From previous crawl
+    Discovered, // Found during fuzzing
 }
 
 /// Options for configuring a fuzz operation
@@ -25,17 +35,21 @@ pub struct FuzzOptions {
     pub wordlist: Vec<String>,
     pub threads: usize,
     pub show_progress_bars: bool,
+    pub use_head_requests: bool,
+    pub timeout_secs: u64,
+    pub db_path: Option<std::path::PathBuf>,
 }
 
 /// Execute fuzzing with given options
-pub async fn execute_fuzz(
-    options: FuzzOptions,
-) -> Result<Vec<FuzzResult>, String> {
+pub async fn execute_fuzz(options: FuzzOptions) -> Result<Vec<FuzzResult>, String> {
     let FuzzOptions {
         base_urls,
         wordlist,
         threads,
         show_progress_bars,
+        use_head_requests,
+        timeout_secs,
+        db_path,
     } = options;
 
     if base_urls.is_empty() {
@@ -46,17 +60,58 @@ pub async fn execute_fuzz(
         return Err("Wordlist is empty".to_string());
     }
 
-    // Build full URLs to test
-    let mut urls_to_test = Vec::new();
-    for base_url in &base_urls {
-        for word in &wordlist {
-            let test_url = build_test_url(base_url, word)?;
-            urls_to_test.push(test_url);
+    // Query database for known endpoints from previous crawls
+    let mut db_endpoints = Vec::new();
+    if let Some(ref db_path) = db_path {
+        if let Ok(db_urls) = query_database_endpoints(db_path, &base_urls) {
+            db_endpoints = db_urls;
+            if !db_endpoints.is_empty() {
+                println!(
+                    "✓ Found {} endpoints from previous crawls in database",
+                    db_endpoints.len()
+                );
+            }
         }
     }
 
-    let total_requests = urls_to_test.len();
-    println!("Testing {} URLs with {} workers\n", total_requests, threads);
+    // Build initial base URLs with sources
+    // Note: We add database URLs first, then command-line URLs
+    // Since workers use pop() which takes from the end, this ensures
+    // root routes (command-line) are tested BEFORE database endpoints
+    let mut base_urls_with_source = Vec::new();
+
+    // Add database URLs first (will be tested last)
+    for url in &db_endpoints {
+        base_urls_with_source.push((url.clone(), FuzzSource::Database));
+    }
+
+    // Add command-line URLs last (will be tested first due to pop())
+    for url in &base_urls {
+        base_urls_with_source.push((url.clone(), FuzzSource::Initial));
+    }
+
+    // Build full URLs to test
+    let mut urls_to_test = Vec::new();
+    for (base_url, source) in &base_urls_with_source {
+        for word in &wordlist {
+            let test_url = build_test_url(base_url, word)?;
+            urls_to_test.push((test_url, source.clone()));
+        }
+    }
+
+    let initial_count = urls_to_test.len();
+    println!(
+        "Testing {} initial URLs with {} workers",
+        initial_count, threads
+    );
+    if !db_endpoints.is_empty() {
+        println!(
+            "  {} from command line, {} from database",
+            base_urls.len() * wordlist.len(),
+            db_endpoints.len() * wordlist.len()
+        );
+    }
+    println!();
 
     // Set up multi-progress for worker tracking
     let m = if show_progress_bars {
@@ -65,46 +120,58 @@ pub async fn execute_fuzz(
         None
     };
 
-    // Create shared results vector
+    // Create shared results vector and hits display
     let results: Arc<Mutex<Vec<FuzzResult>>> = Arc::new(Mutex::new(Vec::new()));
+    let hits_display: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
 
-    // Create HTTP client
+    // Create dynamic work queue and tested URLs set
+    let work_queue: Arc<Mutex<Vec<(String, FuzzSource)>>> = Arc::new(Mutex::new(urls_to_test));
+    let tested_urls: Arc<Mutex<std::collections::HashSet<String>>> =
+        Arc::new(Mutex::new(std::collections::HashSet::new()));
+    let wordlist_arc = Arc::new(wordlist);
+
+    // Create hits display progress bar (sticky at top)
+    let hits_pb = if show_progress_bars && let Some(ref multi_progress) = m {
+        let pb = multi_progress.add(ProgressBar::new(0));
+        pb.set_style(ProgressStyle::default_bar().template("{msg}").unwrap());
+        pb.set_message("Hits: 0".to_string());
+        Some(Arc::new(pb))
+    } else {
+        None
+    };
+
+    // Create optimized HTTP client with HTTP/2 and connection pooling
     let client = Arc::new(
         Client::builder()
-            .timeout(Duration::from_secs(10))
+            .timeout(Duration::from_secs(timeout_secs))
+            .connect_timeout(Duration::from_secs(timeout_secs / 2))
+            .pool_max_idle_per_host(threads) // Connection pooling
+            .pool_idle_timeout(Duration::from_secs(90))
+            .http2_adaptive_window(true) // Enable HTTP/2 with adaptive flow control
+            .tcp_keepalive(Duration::from_secs(60))
             .redirect(reqwest::redirect::Policy::limited(3))
+            .user_agent("Rinzler/0.1 (https://github.com/trapdoorsec/rinzler)")
             .build()
-            .map_err(|e| format!("Failed to create HTTP client: {}", e))?
+            .map_err(|e| format!("Failed to create HTTP client: {}", e))?,
     );
 
     // Create semaphore to limit concurrent requests
     let semaphore = Arc::new(Semaphore::new(threads));
 
-    // Distribute URLs across workers
-    let urls_per_worker = (total_requests + threads - 1) / threads;
+    // Spawn workers that pull from shared queue
     let mut worker_tasks = Vec::new();
 
     for worker_id in 0..threads {
-        let start_idx = worker_id * urls_per_worker;
-        let end_idx = std::cmp::min(start_idx + urls_per_worker, total_requests);
-
-        if start_idx >= total_requests {
-            break;
-        }
-
-        let worker_urls = urls_to_test[start_idx..end_idx].to_vec();
-        let worker_count = worker_urls.len();
-
         // Create progress bar for this worker
         let pb = if show_progress_bars && let Some(ref multi_progress) = m {
-            let progress_bar = multi_progress.add(ProgressBar::new(worker_count as u64));
+            let progress_bar = multi_progress.add(ProgressBar::new(initial_count as u64));
             progress_bar.set_style(
                 ProgressStyle::default_bar()
-                    .template("[{bar:40.cyan/blue}] Worker {msg} {pos}/{len}")
+                    .template("[{bar:40.cyan/blue}] Worker {msg}")
                     .unwrap()
                     .progress_chars("=>-"),
             );
-            progress_bar.set_message(format!("{}", worker_id));
+            progress_bar.set_message(format!("{} idle", worker_id));
             Some(progress_bar)
         } else {
             None
@@ -112,22 +179,89 @@ pub async fn execute_fuzz(
 
         let client_clone = client.clone();
         let results_clone = results.clone();
+        let hits_display_clone = hits_display.clone();
+        let hits_pb_clone = hits_pb.clone();
         let semaphore_clone = semaphore.clone();
+        let work_queue_clone = work_queue.clone();
+        let tested_urls_clone = tested_urls.clone();
+        let wordlist_clone = wordlist_arc.clone();
 
         let task = tokio::spawn(async move {
-            for url in worker_urls {
+            let mut processed = 0;
+
+            loop {
+                // Try to get work from queue
+                let work_item = {
+                    let mut queue = work_queue_clone.lock().await;
+                    queue.pop()
+                };
+
+                let Some((url, source)) = work_item else {
+                    break; // No more work
+                };
+
+                // Extract path for display
+                let url_path = extract_path(&url);
+
+                // Update progress bar with current URL in orange
+                if let Some(ref pb) = pb {
+                    processed += 1;
+                    let msg = format!(
+                        "{} {} {}",
+                        worker_id,
+                        processed,
+                        format!("[{}]", url_path).truecolor(255, 165, 0) // Orange
+                    );
+                    pb.set_message(msg);
+                }
+
                 // Acquire semaphore permit
                 let _permit = semaphore_clone.acquire().await.unwrap();
 
                 // Make request
-                if let Ok(result) = make_fuzz_request(&client_clone, &url).await {
-                    // Only save successful responses (200-399) or interesting errors
+                if let Ok(mut result) =
+                    make_fuzz_request(&client_clone, &url, use_head_requests).await
+                {
+                    result.source = source.clone();
+
+                    // Save all responses < 500 to results for final report
                     if result.status_code < 500 {
-                        results_clone.lock().await.push(result);
+                        results_clone.lock().await.push(result.clone());
+                    }
+
+                    // If we found a new endpoint (200-399), add it to queue for fuzzing
+                    if (200..400).contains(&result.status_code) {
+                        // Display the hit
+                        let hit_display = format_hit(&result);
+                        hits_display_clone.lock().await.push(hit_display);
+
+                        // Update hits display area
+                        if let Some(ref hits_pb) = hits_pb_clone {
+                            let hits = hits_display_clone.lock().await;
+                            let formatted = format_hits_display(&hits);
+                            hits_pb.set_message(formatted);
+                        }
+
+                        // Extract base path for this discovered endpoint
+                        if let Ok(base_url) = extract_base_url(&result.url) {
+                            let mut tested = tested_urls_clone.lock().await;
+
+                            // Only add if we haven't tested this base yet
+                            if !tested.contains(&base_url) {
+                                tested.insert(base_url.clone());
+
+                                // Generate new fuzz targets from this discovered endpoint
+                                let mut queue = work_queue_clone.lock().await;
+                                for word in wordlist_clone.iter() {
+                                    if let Ok(new_url) = build_test_url(&base_url, word) {
+                                        queue.push((new_url, FuzzSource::Discovered));
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
 
-                // Update progress bar
                 if let Some(ref pb) = pb {
                     pb.inc(1);
                 }
@@ -143,7 +277,13 @@ pub async fn execute_fuzz(
 
     // Wait for all workers to complete
     for task in worker_tasks {
-        task.await.map_err(|e| format!("Worker task failed: {}", e))?;
+        task.await
+            .map_err(|e| format!("Worker task failed: {}", e))?;
+    }
+
+    // Finalize hits display
+    if let Some(ref hits_pb) = hits_pb {
+        hits_pb.finish();
     }
 
     // Extract results
@@ -152,13 +292,112 @@ pub async fn execute_fuzz(
     Ok(final_results)
 }
 
+/// Extract path component from URL for display
+fn extract_path(url: &str) -> String {
+    if let Ok(parsed) = Url::parse(url) {
+        let path = parsed.path();
+        if path.len() > 40 {
+            format!("...{}", &path[path.len() - 37..])
+        } else {
+            path.to_string()
+        }
+    } else {
+        url.to_string()
+    }
+}
+
+/// Format a single hit for display
+fn format_hit(result: &FuzzResult) -> String {
+    let path = extract_path(&result.url);
+    let status_colored = colorize_status_code(result.status_code);
+    format!("{} {}", path, status_colored)
+}
+
+/// Colorize status code based on value
+fn colorize_status_code(status: u16) -> String {
+    let status_str = format!("[{}]", status);
+    match status {
+        200..=299 => status_str.green().to_string(),
+        300..=399 => status_str.yellow().to_string(),
+        400..=499 => status_str.red().to_string(),
+        _ => status_str.white().to_string(),
+    }
+}
+
+/// Format hits display with multi-column layout (max 10 per column)
+fn format_hits_display(hits: &[String]) -> String {
+    if hits.is_empty() {
+        return "Hits: 0".to_string();
+    }
+
+    let total_hits = hits.len();
+    let max_per_column = 10;
+
+    if total_hits <= max_per_column {
+        // Single column
+        let mut display = format!("Hits: {}\n", total_hits);
+        for hit in hits {
+            display.push_str(&format!("  {}\n", hit));
+        }
+        display
+    } else {
+        // Multiple columns
+        let num_columns = (total_hits + max_per_column - 1) / max_per_column;
+        let mut display = format!(
+            "Hits: {} (showing in {} columns)\n",
+            total_hits, num_columns
+        );
+
+        // Build column layout
+        let mut columns: Vec<Vec<&str>> = vec![Vec::new(); num_columns];
+        for (idx, hit) in hits.iter().enumerate() {
+            let col = idx / max_per_column;
+            if col < num_columns {
+                columns[col].push(hit);
+            }
+        }
+
+        // Display columns side by side
+        let max_rows = columns.iter().map(|c| c.len()).max().unwrap_or(0);
+        for row in 0..max_rows {
+            for (col_idx, column) in columns.iter().enumerate() {
+                if let Some(hit) = column.get(row) {
+                    display.push_str(&format!("  {:50}", hit));
+                } else {
+                    display.push_str(&format!("{:52}", ""));
+                }
+                if col_idx < columns.len() - 1 {
+                    display.push_str("  ");
+                }
+            }
+            display.push('\n');
+        }
+
+        display
+    }
+}
+
 /// Make a single fuzz request
-async fn make_fuzz_request(client: &Client, url: &str) -> Result<FuzzResult, String> {
-    let response = client
-        .get(url)
-        .send()
-        .await
-        .map_err(|e| format!("Request failed: {}", e))?;
+async fn make_fuzz_request(
+    client: &Client,
+    url: &str,
+    use_head: bool,
+) -> Result<FuzzResult, String> {
+    let response = if use_head {
+        // Use HEAD request to skip body download
+        client
+            .head(url)
+            .send()
+            .await
+            .map_err(|e| format!("Request failed: {}", e))?
+    } else {
+        // Use GET request
+        client
+            .get(url)
+            .send()
+            .await
+            .map_err(|e| format!("Request failed: {}", e))?
+    };
 
     let status_code = response.status().as_u16();
     let content_length = response.content_length();
@@ -173,13 +412,69 @@ async fn make_fuzz_request(client: &Client, url: &str) -> Result<FuzzResult, Str
         status_code,
         content_length,
         content_type,
+        source: FuzzSource::Initial, // Will be overwritten by caller
     })
+}
+
+/// Extract base URL from a full URL (removes query params and fragments)
+fn extract_base_url(url: &str) -> Result<String, String> {
+    let parsed = Url::parse(url).map_err(|e| format!("Invalid URL: {}", e))?;
+    let mut base = parsed.clone();
+    base.set_query(None);
+    base.set_fragment(None);
+    Ok(base.to_string())
+}
+
+/// Query database for known endpoints from previous crawls
+fn query_database_endpoints(
+    db_path: &std::path::Path,
+    target_urls: &[String],
+) -> Result<Vec<String>, String> {
+    use crate::data::Database;
+
+    // Open database
+    let db = Database::new(db_path).map_err(|e| format!("Failed to open database: {}", e))?;
+
+    let mut endpoints = Vec::new();
+
+    // Extract domains from target URLs
+    let mut target_domains = Vec::new();
+    for url in target_urls {
+        if let Ok(parsed) = Url::parse(url) {
+            if let Some(host) = parsed.host_str() {
+                target_domains.push(host.to_string());
+            }
+        }
+    }
+
+    // Query database for nodes matching these domains
+    for domain in &target_domains {
+        // Simple query - get all nodes for this domain
+        let query = "SELECT url FROM nodes WHERE domain = ?";
+
+        if let Ok(mut stmt) = db.get_connection().prepare(query) {
+            if let Ok(rows) = stmt.query_map([domain], |row| row.get::<_, String>(0)) {
+                for url_result in rows.flatten() {
+                    // Only include if it's a valid URL for the target
+                    if let Ok(parsed) = Url::parse(&url_result) {
+                        if let Some(host) = parsed.host_str() {
+                            if host == domain || host.ends_with(&format!(".{}", domain)) {
+                                endpoints.push(url_result);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(endpoints)
 }
 
 /// Build a test URL from base URL and wordlist entry
 fn build_test_url(base_url: &str, word: &str) -> Result<String, String> {
-    let mut url = Url::parse(base_url)
-        .map_err(|e| format!("Invalid base URL '{}': {}", base_url, e))?;
+    let mut url =
+        Url::parse(base_url).map_err(|e| format!("Invalid base URL '{}': {}", base_url, e))?;
 
     // Get current path
     let current_path = url.path().to_string();
@@ -212,7 +507,10 @@ pub fn load_wordlist(path: &Path) -> Result<Vec<String>, String> {
         .collect();
 
     if words.is_empty() {
-        return Err(format!("Wordlist {} is empty or contains only comments", path.display()));
+        return Err(format!(
+            "Wordlist {} is empty or contains only comments",
+            path.display()
+        ));
     }
 
     Ok(words)
@@ -222,21 +520,55 @@ pub fn load_wordlist(path: &Path) -> Result<Vec<String>, String> {
 pub fn generate_fuzz_report(results: &[FuzzResult]) -> String {
     let mut report = String::new();
 
+    // Count by source
+    let initial_count = results
+        .iter()
+        .filter(|r| r.source == FuzzSource::Initial)
+        .count();
+    let db_count = results
+        .iter()
+        .filter(|r| r.source == FuzzSource::Database)
+        .count();
+    let discovered_count = results
+        .iter()
+        .filter(|r| r.source == FuzzSource::Discovered)
+        .count();
+
     // Group by status code
     let mut by_status: HashMap<u16, Vec<&FuzzResult>> = HashMap::new();
     for result in results {
-        by_status.entry(result.status_code).or_default().push(result);
+        by_status
+            .entry(result.status_code)
+            .or_default()
+            .push(result);
     }
 
     // Sort status codes
     let mut status_codes: Vec<u16> = by_status.keys().copied().collect();
     status_codes.sort();
 
-    report.push_str("\n═══════════════════════════════════════════════════════════════════════════════\n");
+    report.push_str(
+        "\n═══════════════════════════════════════════════════════════════════════════════\n",
+    );
     report.push_str("                            FUZZ RESULTS\n");
-    report.push_str("═══════════════════════════════════════════════════════════════════════════════\n\n");
+    report.push_str(
+        "═══════════════════════════════════════════════════════════════════════════════\n\n",
+    );
 
-    report.push_str(&format!("Total findings: {}\n\n", results.len()));
+    report.push_str(&format!("Total findings: {}\n", results.len()));
+    if db_count > 0 || discovered_count > 0 {
+        report.push_str(&format!("  {} from initial targets\n", initial_count));
+        if db_count > 0 {
+            report.push_str(&format!("  {} from database endpoints\n", db_count));
+        }
+        if discovered_count > 0 {
+            report.push_str(&format!(
+                "  {} from discovered endpoints\n",
+                discovered_count
+            ));
+        }
+    }
+    report.push('\n');
 
     for status_code in status_codes {
         if let Some(status_results) = by_status.get(&status_code) {
@@ -247,11 +579,24 @@ pub fn generate_fuzz_report(results: &[FuzzResult]) -> String {
                 _ => format!("[{}]", status_code),
             };
 
-            report.push_str(&format!("{} ({} findings)\n", status_label, status_results.len()));
-            report.push_str("───────────────────────────────────────────────────────────────────────────────\n");
+            report.push_str(&format!(
+                "{} ({} findings)\n",
+                status_label,
+                status_results.len()
+            ));
+            report.push_str(
+                "───────────────────────────────────────────────────────────────────────────────\n",
+            );
 
             for result in status_results {
-                report.push_str(&format!("  {}", result.url));
+                // Add source indicator
+                let source_marker = match result.source {
+                    FuzzSource::Initial => "",
+                    FuzzSource::Database => " [DB]",
+                    FuzzSource::Discovered => " [DISC]",
+                };
+
+                report.push_str(&format!("  {}{}", result.url, source_marker));
                 if let Some(length) = result.content_length {
                     report.push_str(&format!(" ({} bytes)", length));
                 }
@@ -265,9 +610,19 @@ pub fn generate_fuzz_report(results: &[FuzzResult]) -> String {
         }
     }
 
-    report.push_str("═══════════════════════════════════════════════════════════════════════════════\n");
+    report.push_str(
+        "═══════════════════════════════════════════════════════════════════════════════\n",
+    );
+    if discovered_count > 0 {
+        report.push_str("  [DB] = From database  [DISC] = Discovered during fuzzing\n");
+        report.push_str(
+            "═══════════════════════════════════════════════════════════════════════════════\n",
+        );
+    }
     report.push_str("                            End of Report\n");
-    report.push_str("═══════════════════════════════════════════════════════════════════════════════\n");
+    report.push_str(
+        "═══════════════════════════════════════════════════════════════════════════════\n",
+    );
 
     report
 }

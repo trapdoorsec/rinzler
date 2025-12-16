@@ -53,7 +53,7 @@ shellexpand = "3.1"
 pager = "0.16"
 
 # Terminal colors
-colored = "2.1"
+colored = "3.0.0"
 
 # Date/time formatting
 chrono = "0.4"

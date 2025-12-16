@@ -50,7 +50,7 @@ pub fn extract_url_path(url: &str) -> String {
 pub async fn execute_crawl(
     options: CrawlOptions,
     progress_callback: Option<CrawlProgressCallback>,
-) -> Result<Vec<rinzler_scanner::result::CrawlResult>, String> {
+) -> Result<Vec<CrawlResult>, String> {
     let CrawlOptions {
         urls,
         threads,
@@ -236,8 +236,7 @@ pub fn generate_crawl_report(results: &[CrawlResult]) -> String {
     report.push_str("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n");
 
     // Group results by host
-    let mut by_host: std::collections::HashMap<String, Vec<&CrawlResult>> =
-        std::collections::HashMap::new();
+    let mut by_host: HashMap<String, Vec<&CrawlResult>> = HashMap::new();
 
     for result in results {
         if let Ok(url) = Url::parse(&result.url)

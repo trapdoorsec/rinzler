@@ -8,15 +8,17 @@ pub fn check_security_headers(result: &CrawlResult, node_id: i64) -> Vec<Finding
     let mut findings = Vec::new();
 
     // Check for missing security headers (only for successful HTML responses)
-    if result.status_code >= 200 && result.status_code < 300 {
-        if let Some(ref content_type) = result.content_type {
-            if content_type.contains("text/html") {
-                // Check for missing security headers
-                // Note: In real implementation, we'd need access to response headers
-                // For now, this is a placeholder structure
+    if result.status_code >= 200
+        && result.status_code < 300
+        && let Some(ref content_type) = result.content_type
+        && content_type.contains("text/html")
+    {
+        // Check for missing security headers
+        // Note: In real implementation, we'd need access to response headers
+        // For now, this is a placeholder structure
 
-                // X-Frame-Options missing
-                findings.push(Finding {
+        // X-Frame-Options missing
+        findings.push(Finding {
                     node_id,
                     finding_type: FindingType::SecurityHeaderMissing,
                     severity: Severity::Low,
@@ -28,8 +30,6 @@ pub fn check_security_headers(result: &CrawlResult, node_id: i64) -> Vec<Finding
                     cwe_id: Some("CWE-1021".to_string()),
                     owasp_category: Some("A05:2021 - Security Misconfiguration".to_string()),
                 });
-            }
-        }
     }
 
     findings
@@ -38,12 +38,15 @@ pub fn check_security_headers(result: &CrawlResult, node_id: i64) -> Vec<Finding
 pub fn check_insecure_transport(result: &CrawlResult, node_id: i64) -> Vec<Finding> {
     let mut findings = Vec::new();
 
-    if let Ok(parsed_url) = Url::parse(&result.url) {
-        if parsed_url.scheme() == "http" {
-            // Check if this is not localhost
-            if let Some(host) = parsed_url.host_str() {
-                if !host.starts_with("127.") && host != "localhost" {
-                    findings.push(Finding {
+    if let Ok(parsed_url) = Url::parse(&result.url)
+        && parsed_url.scheme() == "http"
+    {
+        // Check if this is not localhost
+        if let Some(host) = parsed_url.host_str()
+            && !host.starts_with("127.")
+            && host != "localhost"
+        {
+            findings.push(Finding {
                         node_id,
                         finding_type: FindingType::InsecureTransport,
                         severity: Severity::Medium,
@@ -55,8 +58,6 @@ pub fn check_insecure_transport(result: &CrawlResult, node_id: i64) -> Vec<Findi
                         cwe_id: Some("CWE-319".to_string()),
                         owasp_category: Some("A02:2021 - Cryptographic Failures".to_string()),
                     });
-                }
-            }
         }
     }
 
@@ -72,13 +73,38 @@ pub fn check_interesting_files(result: &CrawlResult, node_id: i64) -> Vec<Findin
         // Check for common interesting files
         let interesting_patterns = vec![
             (".git/", "Git Repository Exposed", Severity::High, "CWE-538"),
-            (".env", "Environment File Exposed", Severity::Critical, "CWE-200"),
-            (".git/config", "Git Configuration Exposed", Severity::High, "CWE-538"),
-            ("/.aws/", "AWS Credentials Directory", Severity::Critical, "CWE-200"),
-            ("/backup", "Backup File Accessible", Severity::Medium, "CWE-530"),
+            (
+                ".env",
+                "Environment File Exposed",
+                Severity::Critical,
+                "CWE-200",
+            ),
+            (
+                ".git/config",
+                "Git Configuration Exposed",
+                Severity::High,
+                "CWE-538",
+            ),
+            (
+                "/.aws/",
+                "AWS Credentials Directory",
+                Severity::Critical,
+                "CWE-200",
+            ),
+            (
+                "/backup",
+                "Backup File Accessible",
+                Severity::Medium,
+                "CWE-530",
+            ),
             (".sql", "SQL Dump File", Severity::High, "CWE-530"),
             (".bak", "Backup File", Severity::Medium, "CWE-530"),
-            ("web.config", "Configuration File Exposed", Severity::High, "CWE-215"),
+            (
+                "web.config",
+                "Configuration File Exposed",
+                Severity::High,
+                "CWE-215",
+            ),
             ("phpinfo.php", "PHP Info Page", Severity::Info, "CWE-200"),
             ("/admin", "Admin Interface", Severity::Info, "CWE-200"),
             ("/api/", "API Endpoint", Severity::Info, "CWE-200"),

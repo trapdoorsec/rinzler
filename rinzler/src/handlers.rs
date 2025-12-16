@@ -309,7 +309,7 @@ pub async fn handle_crawl(sub_matches: &ArgMatches) {
     tracing_subscriber::fmt::init();
 
     let url = sub_matches.get_one::<Url>("url");
-    let hosts_file = sub_matches.get_one::<std::path::PathBuf>("hosts-file");
+    let hosts_file = sub_matches.get_one::<PathBuf>("hosts-file");
     let threads = *sub_matches.get_one::<usize>("threads").unwrap_or(&10);
     let follow = sub_matches.get_flag("follow");
     let auto_follow = sub_matches.get_flag("auto-follow");
@@ -440,7 +440,12 @@ pub async fn handle_crawl(sub_matches: &ArgMatches) {
                 }
             }
             Err(e) => {
-                eprintln!("  {} Failed to insert node {}: {}", "⚠".yellow(), result.url, e);
+                eprintln!(
+                    "  {} Failed to insert node {}: {}",
+                    "⚠".yellow(),
+                    result.url,
+                    e
+                );
             }
         }
     }
@@ -450,7 +455,12 @@ pub async fn handle_crawl(sub_matches: &ArgMatches) {
         eprintln!("✗ Failed to complete session: {}", e);
     }
 
-    println!("{} Saved {} nodes and {} findings", "✓".green().bold(), all_results.len(), findings_count);
+    println!(
+        "{} Saved {} nodes and {} findings",
+        "✓".green().bold(),
+        all_results.len(),
+        findings_count
+    );
     println!();
 
     // Generate and display report
@@ -479,8 +489,11 @@ pub async fn handle_crawl(sub_matches: &ArgMatches) {
     }
 
     // Handle report generation and output
-    let output_path = sub_matches.get_one::<std::path::PathBuf>("output");
-    let format = sub_matches.get_one::<String>("format").map(|s| s.as_str()).unwrap_or("text");
+    let output_path = sub_matches.get_one::<PathBuf>("output");
+    let format = sub_matches
+        .get_one::<String>("format")
+        .map(|s| s.as_str())
+        .unwrap_or("text");
     let include_sitemap = sub_matches.get_flag("include-sitemap");
 
     if output_path.is_some() || findings_count > 0 {
@@ -490,15 +503,11 @@ pub async fn handle_crawl(sub_matches: &ArgMatches) {
             Ok(report_data) => {
                 let report_content = match format {
                     "text" => rinzler_core::report::generate_text_report(&report_data),
-                    "json" => {
-                        match rinzler_core::report::generate_json_report(&report_data) {
-                            Ok(json) => json,
-                            Err(e) => {
-                                eprintln!("  {} Failed to generate JSON: {}", "✗".red(), e);
-                                String::new()
-                            }
-                        }
-                    }
+                    "json" => rinzler_core::report::generate_json_report(&report_data)
+                        .unwrap_or_else(|e| {
+                            eprintln!("  {} Failed to generate JSON: {}", "✗".red(), e);
+                            String::new()
+                        }),
                     "csv" => {
                         println!("  {} CSV format not yet implemented", "⚠".yellow());
                         String::new()
@@ -521,7 +530,11 @@ pub async fn handle_crawl(sub_matches: &ArgMatches) {
                     if let Some(path) = output_path {
                         match rinzler_core::report::save_report(&report_content, path) {
                             Ok(_) => {
-                                println!("{} Report saved to: {}", "✓".green().bold(), path.display().to_string().bright_white());
+                                println!(
+                                    "{} Report saved to: {}",
+                                    "✓".green().bold(),
+                                    path.display().to_string().bright_white()
+                                );
                             }
                             Err(e) => {
                                 eprintln!("{} Failed to save report: {}", "✗".red(), e);
@@ -548,9 +561,12 @@ pub async fn handle_crawl(sub_matches: &ArgMatches) {
 
 pub async fn handle_fuzz(sub_matches: &ArgMatches) {
     let url = sub_matches.get_one::<Url>("url");
-    let hosts_file = sub_matches.get_one::<std::path::PathBuf>("hosts-file");
-    let wordlist_file = sub_matches.get_one::<std::path::PathBuf>("wordlist-file");
+    let hosts_file = sub_matches.get_one::<PathBuf>("hosts-file");
+    let wordlist_file = sub_matches.get_one::<PathBuf>("wordlist-file");
     let threads = *sub_matches.get_one::<usize>("threads").unwrap_or(&10);
+    let full_body = sub_matches.get_flag("full-body");
+    let use_head = !full_body; // Default to HEAD unless --full-body is specified
+    let timeout = *sub_matches.get_one::<u64>("timeout").unwrap_or(&5);
 
     // Load URLs from source
     let urls = match load_urls_from_source(url, hosts_file) {
@@ -564,12 +580,10 @@ pub async fn handle_fuzz(sub_matches: &ArgMatches) {
     // Load wordlist - use default if not specified
     let default_wordlist_path = {
         let expanded = shellexpand::tilde("~/.config/rinzler/wordlists/default.txt");
-        std::path::PathBuf::from(expanded.as_ref())
+        PathBuf::from(expanded.as_ref())
     };
 
-    let wordlist_path = wordlist_file
-        .cloned()
-        .unwrap_or(default_wordlist_path);
+    let wordlist_path = wordlist_file.cloned().unwrap_or(default_wordlist_path);
 
     let wordlist = match rinzler_core::fuzz::load_wordlist(&wordlist_path) {
         Ok(words) => words,
@@ -583,8 +597,21 @@ pub async fn handle_fuzz(sub_matches: &ArgMatches) {
     // Print fuzz configuration
     println!("\n🎯 Fuzzing {} target(s)", urls.len());
     println!("Workers: {}", threads);
-    println!("Wordlist: {} entries from {}", wordlist.len(), wordlist_path.display());
+    println!(
+        "Wordlist: {} entries from {}",
+        wordlist.len(),
+        wordlist_path.display()
+    );
+    println!("Method: {}", if use_head { "HEAD" } else { "GET" });
+    println!("Timeout: {}s", timeout);
     println!("Total requests: {}\n", urls.len() * wordlist.len());
+
+    // Get database path
+    let db_path = {
+        let expanded = shellexpand::tilde("~/.config/rinzler/rinzler.db");
+        let path = PathBuf::from(expanded.as_ref());
+        if path.exists() { Some(path) } else { None }
+    };
 
     // Execute fuzzing
     let options = rinzler_core::fuzz::FuzzOptions {
@@ -592,6 +619,9 @@ pub async fn handle_fuzz(sub_matches: &ArgMatches) {
         wordlist,
         threads,
         show_progress_bars: true,
+        use_head_requests: use_head,
+        timeout_secs: timeout,
+        db_path,
     };
 
     let results = match rinzler_core::fuzz::execute_fuzz(options).await {
@@ -606,8 +636,7 @@ pub async fn handle_fuzz(sub_matches: &ArgMatches) {
 
     // Generate and display report
     let report = rinzler_core::fuzz::generate_fuzz_report(&results);
-    Pager::with_pager("less -R").setup();
-    print!("{}", report);
+    println!("{}", report);
 }
 
 pub fn handle_plugin_list() {
@@ -616,7 +645,7 @@ pub fn handle_plugin_list() {
 }
 
 pub fn handle_plugin_register(args: &ArgMatches) {
-    let file = args.get_one::<std::path::PathBuf>("file").unwrap();
+    let file = args.get_one::<PathBuf>("file").unwrap();
     let name = args.get_one::<String>("name").unwrap();
     println!(
         "Registering plugin '{}' from file: {}",

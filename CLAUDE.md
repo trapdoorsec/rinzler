@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Rinzler is a Web API scanning tool under active development. It's designed to be a "somewhat intelligent API scanner" for security testing and reconnaissance of web APIs. The core web crawling functionality is now implemented and functional, with database initialization and result reporting working.
+Rinzler is a Web API scanning tool under active development. It's designed to be a "somewhat intelligent API scanner" for security testing and reconnaissance of web APIs. Core features now implemented include web crawling with passive security analysis, forced browsing/fuzzing, database persistence, and multi-format report generation (text, JSON).
 
 ## Workspace Structure
 
@@ -14,7 +14,7 @@ This is a Rust workspace with three crates:
 - **rinzler-core**: Core library with crawl orchestration, database management, and reporting
 - **rinzler-scanner**: Scanner implementation library with HTML crawling and link extraction
 
-All workspace crates use shared version `0.1.19-alpha-251216023011` and Rust edition 2024.
+All workspace crates use shared version `0.1.10-alpha` and Rust edition 2024.
 
 ## Key Dependencies
 
@@ -55,10 +55,14 @@ cargo run -- crawl -H hosts.txt                      # Crawl multiple hosts from
 cargo run -- crawl -u http://example.com -t 20       # Use 20 worker threads
 cargo run -- crawl -u http://example.com --follow    # Prompt for cross-domain links
 cargo run -- crawl -u http://example.com --auto-follow  # Auto-follow all cross-domain links
+cargo run -- crawl -u http://example.com -o report.txt  # Save report to file
+cargo run -- crawl -u http://example.com -f json     # Generate JSON format report
+cargo run -- crawl -u http://example.com --include-sitemap  # Include sitemap in report
 
-# Fuzz commands (not yet implemented)
-cargo run -- fuzz --url http://example.com           # Fuzz a single URL
+# Fuzz commands
+cargo run -- fuzz --url http://example.com           # Fuzz a single URL with default wordlist
 cargo run -- fuzz -H hosts.txt -w wordlist.txt       # Fuzz with custom wordlist
+cargo run -- fuzz -u http://example.com -t 5         # Fuzz with 5 worker threads
 
 # Other commands
 cargo run -- --help                                  # Show help
@@ -109,20 +113,35 @@ The main binary uses clap for argument parsing with custom styling (via clap-car
 - `--threads/-t <NUM>`: Number of async worker threads (default: 10)
 - `--follow`: Prompt user for each cross-domain link
 - `--auto-follow`: Automatically follow all cross-domain links
+- `--output/-o <PATH>`: Save report to file (default: display to screen)
+- `--format/-f <FORMAT>`: Report format - text, json, csv, html, markdown (default: text)
+- `--include-sitemap`: Include visual sitemap tree in report
 - Max depth: 3 levels (hardcoded)
 - Features:
   - Multi-threaded async crawling with worker pools
   - Progress bars showing per-worker status
   - Cross-domain link detection with three modes (disabled/prompt/auto)
   - HTML parsing to extract links, forms, and scripts
+  - Passive security analysis (insecure transport, interesting files, error messages)
+  - Database persistence of all findings with severity ratings
+  - Multi-format report generation (text, JSON)
+  - Optional sitemap visualization in reports
   - Colored output report grouped by host
-  - Paginated results using less
+  - Paginated results using less -R
 
-#### `fuzz` - Active Fuzzing (STUB)
-- `--url/-u <URL>`: Target URL
-- `--hosts-file/-H <PATH>`: Hosts file
-- `--wordlist-file/-w <PATH>`: Wordlist (default: `~/.config/rinzler/wordlist`)
+#### `fuzz` - Forced Browsing/Directory Enumeration (IMPLEMENTED)
+- `--url/-u <URL>`: Target URL (default: http://127.0.0.1)
+- `--hosts-file/-H <PATH>`: Line-delimited file of hosts to fuzz
+- `--wordlist-file/-w <PATH>`: Wordlist (default: `~/.config/rinzler/wordlists/default.txt`)
 - `--threads/-t <NUM>`: Worker threads (default: 10)
+- Features:
+  - Distributed fuzzing across worker threads with progress bars
+  - Smart URL construction (base URL + wordlist entries)
+  - Concurrent requests with semaphore-based rate limiting
+  - Filters responses (saves status < 500)
+  - Results grouped by status code in report
+  - Shows content length and content type for each finding
+  - Default wordlist with 99 API-focused endpoints
 
 #### `workspace` - Workspace Management (STUB)
 - `create --name <NAME>`: Create workspace
@@ -157,23 +176,48 @@ The main binary uses clap for argument parsing with custom styling (via clap-car
   - `FollowMode`: Enum for cross-domain behavior (Disabled/Prompt/Auto)
   - `generate_crawl_report()`: Format results with colored status codes
   - `extract_url_path()`: Extract path component from URL
+- **fuzz module** (`rinzler_core::fuzz`):
+  - `execute_fuzz()`: Async forced browsing with worker distribution
+  - `FuzzOptions`: Configuration struct (base_urls, wordlist, threads, show_progress_bars)
+  - `FuzzResult`: Data structure for fuzz findings (url, status_code, content_length, content_type)
+  - `load_wordlist()`: Load and parse wordlist files (filters comments and empty lines)
+  - `generate_fuzz_report()`: Format results grouped by status code
+  - `build_test_url()`: Construct URLs from base + wordlist entry
 - **data module** (`rinzler_core::data`):
   - `Database::new(path)`: Initialize database with optimized SQLite pragmas (WAL mode, 64MB cache)
   - `Database::exists(path)`: Check if database exists
   - `Database::drop(path)`: Delete database file
-  - Schema: crawl_sessions, maps, nodes, edges (for graph modeling)
+  - Schema: crawl_sessions, maps, nodes, edges, findings, technologies, http_transactions
+  - Enhanced schema with severity ratings, CWE/OWASP categorization, service types
+  - Enums: `Severity` (Critical/High/Medium/Low/Info), `FindingType`, `ServiceType`
+  - Structs: `CrawlNode`, `Finding` for structured data
+  - Methods: `create_session()`, `insert_node()`, `insert_finding()`, `get_findings_by_severity()`
   - Optimizations: WAL journal mode, normal synchronous, memory temp store
+- **security module** (`rinzler_core::security`):
+  - `analyze_crawl_result()`: Run all passive security checks on crawl results
+  - `check_insecure_transport()`: Detect HTTP vs HTTPS
+  - `check_interesting_files()`: Detect sensitive files (.git/, .env, backups, configs)
+  - `check_error_messages()`: Identify 5xx server errors
+  - Each check returns `Finding` with severity, CWE, OWASP category, impact, remediation
+- **report module** (`rinzler_core::report`):
+  - `gather_report_data()`: Query database for complete report data
+  - `generate_text_report()`: Create formatted text report with headers, executive summary, detailed findings
+  - `generate_json_report()`: Create structured JSON report with metadata
+  - `save_report()`: Write report to file
+  - Structures: `ReportData`, `FindingData`, `SeverityCounts`, `ScanInfo`, `SitemapNode`
+  - `ReportFormat` enum: Text, Json, Csv, Html, Markdown (csv/html/markdown stubs)
+  - Helper functions for timestamp formatting, text wrapping, sitemap tree generation
 - **Banner**: ASCII art banner with version info
 
 #### rinzler (Binary)
 - **handlers module** (`rinzler::handlers`):
-  - `handle_init()`: Interactive database setup with spinner animations
-  - `handle_crawl()`: Async crawl execution with progress tracking and report generation
-  - `handle_fuzz()`: Stub for future implementation
+  - `handle_init()`: Interactive database setup with colorful console output
+  - `handle_crawl()`: Async crawl execution with progress tracking, security analysis, database persistence, and report generation
+  - `handle_fuzz()`: Async forced browsing with wordlist loading and distributed workers
   - `handle_workspace_*()`: Stubs for workspace management
   - `handle_plugin_*()`: Stubs for plugin management
   - URL loading helpers: `load_urls_from_source()`, `load_urls_from_file()`, `parse_url_line()`
-- **Default wordlist**: Embedded in binary with `include_str!()` macro
+- **Default wordlist**: Embedded in binary with `include_str!()` macro (99 API-focused endpoints)
 - **Tests**: Unit tests in `rinzler/tests/handlers_tests.rs`
 
 ### Design Patterns
@@ -184,10 +228,11 @@ The main binary uses clap for argument parsing with custom styling (via clap-car
 - **URL Normalization**: Automatic http:// prefix addition for URLs without schemes
 
 ### Planned Components (Not Yet Implemented)
-- **Fuzzing engine**: Dictionary-based endpoint discovery
+- **Additional report formats**: CSV, HTML, and Markdown generators
+- **Advanced fuzzing**: Parameter fuzzing, HTTP method fuzzing, header injection
 - **Graph modeling**: Use petgraph for API endpoint relationship mapping
 - **TUI interface**: Interactive terminal UI for scan monitoring/control (rinzler-tui crate removed from workspace)
-- **Workspace system**: Project/target isolation
+- **Workspace system**: Project/target isolation for managing multiple targets
 - **Plugin system**: Extensibility through custom plugins
 
 ### Edition 2024

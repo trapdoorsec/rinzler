@@ -1,10 +1,10 @@
 pub mod crawl;
 pub mod data;
 pub mod fuzz;
-pub mod report;
-pub mod security;
 mod map;
 mod model;
+pub mod report;
+pub mod security;
 
 pub fn print_banner() {
     let version = env!("CARGO_PKG_VERSION");

@@ -1,4 +1,4 @@
-use rusqlite::{params, Connection, OptionalExtension, Result};
+use rusqlite::{Connection, OptionalExtension, Result, params};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
@@ -96,7 +96,7 @@ pub struct CrawlNode {
     pub title: Option<String>,
     pub forms_count: usize,
     pub service_type: Option<ServiceType>,
-    pub headers: Option<String>,  // JSON
+    pub headers: Option<String>, // JSON
     pub body_sample: Option<String>,
 }
 
@@ -109,7 +109,7 @@ pub struct Finding {
     pub description: String,
     pub impact: Option<String>,
     pub remediation: Option<String>,
-    pub evidence: Option<String>,  // JSON
+    pub evidence: Option<String>, // JSON
     pub cwe_id: Option<String>,
     pub owasp_category: Option<String>,
 }
@@ -465,11 +465,13 @@ CREATE INDEX IF NOT EXISTS idx_http_transactions_timestamp ON http_transactions(
     }
 
     pub fn get_node_by_url(&self, map_id: &str, url: &str) -> Result<Option<i64>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id FROM nodes WHERE map_id = ?1 AND url = ?2"
-        )?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id FROM nodes WHERE map_id = ?1 AND url = ?2")?;
 
-        let result = stmt.query_row(params![map_id, url], |row| row.get(0)).optional()?;
+        let result = stmt
+            .query_row(params![map_id, url], |row| row.get(0))
+            .optional()?;
         Ok(result)
     }
 
@@ -488,7 +490,7 @@ CREATE INDEX IF NOT EXISTS idx_http_transactions_timestamp ON http_transactions(
                 finding.node_id,
                 finding.finding_type.as_str(),
                 finding.severity.as_str(),
-                "likely",  // default confidence
+                "likely", // default confidence
                 &finding.title,
                 &finding.description,
                 &finding.impact,
@@ -503,7 +505,10 @@ CREATE INDEX IF NOT EXISTS idx_http_transactions_timestamp ON http_transactions(
         Ok(self.conn.last_insert_rowid())
     }
 
-    pub fn get_findings_by_session(&self, session_id: &str) -> Result<Vec<(i64, String, String, String)>> {
+    pub fn get_findings_by_session(
+        &self,
+        session_id: &str,
+    ) -> Result<Vec<(i64, String, String, String)>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, severity, title, description FROM findings WHERE session_id = ?1 AND false_positive = 0 ORDER BY CASE severity
                 WHEN 'critical' THEN 1
@@ -514,15 +519,11 @@ CREATE INDEX IF NOT EXISTS idx_http_transactions_timestamp ON http_transactions(
             END, id"
         )?;
 
-        let findings = stmt.query_map(params![session_id], |row| {
-            Ok((
-                row.get(0)?,
-                row.get(1)?,
-                row.get(2)?,
-                row.get(3)?,
-            ))
-        })?
-        .collect::<Result<Vec<_>>>()?;
+        let findings = stmt
+            .query_map(params![session_id], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+            })?
+            .collect::<Result<Vec<_>>>()?;
 
         Ok(findings)
     }
@@ -532,16 +533,24 @@ CREATE INDEX IF NOT EXISTS idx_http_transactions_timestamp ON http_transactions(
             "SELECT severity, COUNT(*) FROM findings WHERE session_id = ?1 AND false_positive = 0 GROUP BY severity"
         )?;
 
-        let counts = stmt.query_map(params![session_id], |row| {
-            Ok((row.get(0)?, row.get(1)?))
-        })?
-        .collect::<Result<Vec<_>>>()?;
+        let counts = stmt
+            .query_map(params![session_id], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .collect::<Result<Vec<_>>>()?;
 
         Ok(counts)
     }
 
     // Technology detection
-    pub fn insert_technology(&self, node_id: i64, category: &str, name: &str, version: Option<&str>, detection_method: &str, evidence: Option<&str>, confidence: u8) -> Result<i64> {
+    pub fn insert_technology(
+        &self,
+        node_id: i64,
+        category: &str,
+        name: &str,
+        version: Option<&str>,
+        detection_method: &str,
+        evidence: Option<&str>,
+        confidence: u8,
+    ) -> Result<i64> {
         let timestamp = current_timestamp();
 
         self.conn.execute(
@@ -553,15 +562,19 @@ CREATE INDEX IF NOT EXISTS idx_http_transactions_timestamp ON http_transactions(
         Ok(self.conn.last_insert_rowid())
     }
 
-    pub fn get_technologies_by_node(&self, node_id: i64) -> Result<Vec<(String, String, Option<String>)>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT category, name, version FROM technologies WHERE node_id = ?1"
-        )?;
+    pub fn get_technologies_by_node(
+        &self,
+        node_id: i64,
+    ) -> Result<Vec<(String, String, Option<String>)>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT category, name, version FROM technologies WHERE node_id = ?1")?;
 
-        let techs = stmt.query_map(params![node_id], |row| {
-            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
-        })?
-        .collect::<Result<Vec<_>>>()?;
+        let techs = stmt
+            .query_map(params![node_id], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+            })?
+            .collect::<Result<Vec<_>>>()?;
 
         Ok(techs)
     }
@@ -602,18 +615,22 @@ CREATE INDEX IF NOT EXISTS idx_http_transactions_timestamp ON http_transactions(
     }
 
     // Query methods
-    pub fn get_nodes_by_session(&self, session_id: &str) -> Result<Vec<(i64, String, i64, Option<String>)>> {
+    pub fn get_nodes_by_session(
+        &self,
+        session_id: &str,
+    ) -> Result<Vec<(i64, String, i64, Option<String>)>> {
         let mut stmt = self.conn.prepare(
             "SELECT n.id, n.url, n.response_code, n.service_type
              FROM nodes n
              JOIN maps m ON n.map_id = m.id
-             WHERE m.session_id = ?1"
+             WHERE m.session_id = ?1",
         )?;
 
-        let nodes = stmt.query_map(params![session_id], |row| {
-            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
-        })?
-        .collect::<Result<Vec<_>>>()?;
+        let nodes = stmt
+            .query_map(params![session_id], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+            })?
+            .collect::<Result<Vec<_>>>()?;
 
         Ok(nodes)
     }

@@ -22,13 +22,24 @@ pub struct Crawler {
     progress_callback: Option<ProgressCallback>,
     cross_domain_callback: Option<CrossDomainCallback>,
     auto_follow: bool,
+    #[allow(dead_code)]
+    timeout_secs: u64,
 }
 
 impl Crawler {
     pub fn new() -> Self {
+        Self::with_timeout(10)
+    }
+
+    pub fn with_timeout(timeout_secs: u64) -> Self {
         let client = Client::builder()
             .user_agent("Rinzler/0.1 (https://github.com/trapdoorsec/rinzler)")
-            .timeout(std::time::Duration::from_secs(30))
+            .timeout(std::time::Duration::from_secs(timeout_secs))
+            .connect_timeout(std::time::Duration::from_secs(timeout_secs / 2))
+            .pool_max_idle_per_host(50) // Connection pooling
+            .pool_idle_timeout(std::time::Duration::from_secs(90))
+            .http2_adaptive_window(true) // Enable HTTP/2 with adaptive flow control
+            .tcp_keepalive(std::time::Duration::from_secs(60))
             .redirect(reqwest::redirect::Policy::limited(5))
             .build()
             .expect("Failed to create HTTP client");
@@ -42,6 +53,7 @@ impl Crawler {
             progress_callback: None,
             cross_domain_callback: None,
             auto_follow: false,
+            timeout_secs,
         }
     }
 

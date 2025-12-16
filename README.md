@@ -2,16 +2,18 @@
 
 A somewhat intelligent Web API scanner for security testing and reconnaissance.
 
-> Under active development. Core crawling functionality is working, fuzzing and advanced features coming soon.
+> Under active development. Core features implemented: crawling with security analysis, forced browsing/fuzzing, database persistence, and multi-format reporting.
 
 ## Features
 
 - **Web Crawling**: Multi-threaded async crawling with configurable depth and worker pools
+- **Forced Browsing**: Dictionary-based directory enumeration with distributed workers
+- **Security Analysis**: Passive detection of insecure transport, sensitive files, and server errors
 - **Cross-domain Control**: Stay on target or follow external links with prompt/auto modes
-- **Progress Tracking**: Real-time worker status and progress bars
-- **Smart Reporting**: Color-coded results grouped by host, paginated output
-- **SQLite Backend**: Persistent storage for scan results and API relationship graphs
-- **Embedded Wordlists**: Default API endpoint wordlist included
+- **Progress Tracking**: Real-time worker status with progress bars for each thread
+- **Multi-format Reports**: Generate reports in text or JSON format with optional sitemaps
+- **SQLite Backend**: Persistent storage with severity ratings, CWE/OWASP categorization
+- **Embedded Wordlists**: Default API endpoint wordlist with 99 entries included
 
 ## Quick Start
 
@@ -53,7 +55,7 @@ The binary will be in `target/release/rinzler`.
 
 - `init` - Initialize database and configuration directory
 - `crawl` - Passively crawl targets and extract API endpoints
-- `fuzz` - Actively fuzz targets with wordlists (coming soon)
+- `fuzz` - Actively fuzz targets with wordlists for forced browsing
 - `workspace` - Manage scan workspaces (coming soon)
 - `plugin` - Manage plugins (coming soon)
 

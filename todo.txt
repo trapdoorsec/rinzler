@@ -1,0 +1,92 @@
+ 1. API Endpoint Classification
+  - Parse crawled URLs to identify API patterns (/api/v1/users/{id}, /graphql, etc.)
+  - Detect REST vs GraphQL vs SOAP endpoints
+  - Identify parameter types (path params, query strings, form data)
+  - Store in the database with the graph structure you already have set up
+
+  2. Fuzzing Implementation (Already Stubbed)
+  - Use the wordlist you're already bundling
+  - Directory/endpoint discovery
+  - Parameter fuzzing for discovered endpoints
+  - Status code analysis (interesting 403s, 401s vs 404s)
+  - Could reuse the worker pool pattern from crawling
+
+  3. Response Analysis
+  - Content type detection beyond just headers
+  - JSON/XML schema extraction
+  - Error message collection (great for finding info leaks)
+  - Technology fingerprinting (framework detection from responses)
+  - Store interesting responses in database
+
+  Medium Priority (Intelligence & Usability)
+
+  4. Request Replay System
+  - Save interesting requests to database
+  - CLI command to replay with modifications
+  - Useful for manual testing after automated scan
+  - Could integrate with fuzzing
+
+  5. Authentication Support
+  - Cookie/session handling (reqwest already does this)
+  - Bearer token injection
+  - Basic auth
+  - Custom headers per target
+  - Store auth configs in workspace
+
+  6. Scope Management
+  - Include/exclude patterns
+  - Subdomain handling policies
+  - Respect robots.txt (with override flag)
+  - Domain whitelist/blacklist
+  - Already have cross-domain logic, expand on it
+
+  7. Export Functionality
+  - JSON export of findings
+  - CSV for spreadsheets
+  - Markdown reports
+  - OpenAPI/Swagger spec generation from discovered endpoints
+  - Burp Suite import format
+
+  Lower Priority (Nice to Have)
+
+  8. Workspace Implementation (Already Stubbed)
+  - Isolate scans by project/client
+  - Different targets per workspace
+  - Comparison between workspace scans
+  - Database already has workspace-ready schema
+
+  9. Passive Reconnaissance Integration
+  - Certificate transparency log checks
+  - DNS enumeration
+  - Shodan/Censys integration
+  - WHOIS data collection
+  - Archive.org historical crawling
+
+  10. Smart Filtering
+  - Learn common static asset patterns
+  - Skip redundant endpoints (pagination, etc.)
+  - Focus on unique parameter combinations
+  - Use petgraph to identify important nodes
+
+  11. Rate Limiting & Stealth
+  - Configurable delays between requests
+  - Jitter/randomization
+  - User-agent rotation
+  - Proxy support
+  - Respect 429 responses
+
+  12. Plugin System (Already Stubbed)
+  - WASM plugins for custom checks
+  - Hook into crawl/fuzz pipeline
+  - Community wordlists/rules
+  - Custom output formats
+
+  What I'd Build Next
+
+  If it were me, I'd go in this order:
+
+  1. Fuzzing - It's already stubbed and complements crawling perfectly
+  2. API Endpoint Classification - Makes the tool "intelligent" by understanding what it finds
+  3. Export Functionality - People need to get data out to actually use it
+  4. Response Analysis - Helps find interesting stuff automatically
+  5. Authentication Support - Needed for testing real apps

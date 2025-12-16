@@ -152,6 +152,19 @@ pub(crate) fn command_argument_builder() -> clap::Command {
                         .help("The number of async worker 'threads' in the worker pool.")
                         .value_parser(clap::value_parser!(usize))
                         .default_value("10"),
+                )
+                .arg(
+                    arg!(--"full-body")
+                        .required(false)
+                        .help("Use GET requests to download full response bodies (default: HEAD requests)")
+                        .action(clap::ArgAction::SetTrue),
+                )
+                .arg(
+                    arg!(--"timeout" <SECONDS>)
+                        .required(false)
+                        .help("Request timeout in seconds")
+                        .value_parser(clap::value_parser!(u64))
+                        .default_value("5"),
                 ),
         )
         .subcommand(

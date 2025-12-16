@@ -19,9 +19,20 @@
   <component name="ChangeListManager">
     <list default="true" id="75a6ddfc-3da5-4e6f-814e-a37b9fa2c551" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/CLAUDE.md" beforeDir="false" afterPath="$PROJECT_DIR$/CLAUDE.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Cargo.lock" beforeDir="false" afterPath="$PROJECT_DIR$/Cargo.lock" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Cargo.toml" beforeDir="false" afterPath="$PROJECT_DIR$/Cargo.toml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/rinzler-core/Cargo.toml" beforeDir="false" afterPath="$PROJECT_DIR$/rinzler-core/Cargo.toml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/rinzler-core/src/crawl.rs" beforeDir="false" afterPath="$PROJECT_DIR$/rinzler-core/src/crawl.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/rinzler-core/src/data.rs" beforeDir="false" afterPath="$PROJECT_DIR$/rinzler-core/src/data.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/rinzler-core/src/fuzz.rs" beforeDir="false" afterPath="$PROJECT_DIR$/rinzler-core/src/fuzz.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/rinzler-core/src/lib.rs" beforeDir="false" afterPath="$PROJECT_DIR$/rinzler-core/src/lib.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/rinzler-core/src/report.rs" beforeDir="false" afterPath="$PROJECT_DIR$/rinzler-core/src/report.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/rinzler-core/src/security.rs" beforeDir="false" afterPath="$PROJECT_DIR$/rinzler-core/src/security.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/rinzler-scanner/Cargo.toml" beforeDir="false" afterPath="$PROJECT_DIR$/rinzler-scanner/Cargo.toml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/rinzler-scanner/src/crawler.rs" beforeDir="false" afterPath="$PROJECT_DIR$/rinzler-scanner/src/crawler.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/rinzler/src/commands.rs" beforeDir="false" afterPath="$PROJECT_DIR$/rinzler/src/commands.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/rinzler/src/handlers.rs" beforeDir="false" afterPath="$PROJECT_DIR$/rinzler/src/handlers.rs" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -29,7 +40,7 @@
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
     <option name="LAST_RESOLUTION" value="IGNORE" />
   </component>
-  <component name="ExecutionTargetManager" SELECTED_TARGET="RsBuildProfile:test" />
+  <component name="ExecutionTargetManager" SELECTED_TARGET="RsBuildProfile:release" />
   <component name="FileTemplateManagerImpl">
     <option name="RECENT_TEMPLATES">
       <list>
@@ -42,6 +53,9 @@
   </component>
   <component name="MacroExpansionManager">
     <option name="directoryName" value="INL7UDfT" />
+  </component>
+  <component name="ProblemsViewState">
+    <option name="selectedTabId" value="ProjectErrors" />
   </component>
   <component name="ProjectColorInfo">{
   &quot;associatedIndex&quot;: 3
@@ -178,7 +192,7 @@
       </method>
     </configuration>
     <configuration name="Test" type="CargoCommandRunConfiguration" factoryName="Cargo Command" nameIsGenerated="true">
-      <option name="buildProfileId" value="test" />
+      <option name="buildProfileId" value="release" />
       <option name="command" value="test" />
       <option name="workingDirectory" value="file://$PROJECT_DIR$" />
       <envs />
@@ -219,7 +233,7 @@
       <workItem from="1765094046424" duration="9535000" />
       <workItem from="1765459496446" duration="50971000" />
       <workItem from="1765713762418" duration="277000" />
-      <workItem from="1765714393751" duration="24923000" />
+      <workItem from="1765714393751" duration="32337000" />
     </task>
     <servers />
   </component>
