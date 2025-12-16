@@ -550,22 +550,64 @@ pub async fn handle_fuzz(sub_matches: &ArgMatches) {
     let url = sub_matches.get_one::<Url>("url");
     let hosts_file = sub_matches.get_one::<std::path::PathBuf>("hosts-file");
     let wordlist_file = sub_matches.get_one::<std::path::PathBuf>("wordlist-file");
-    let threads = sub_matches.get_one::<usize>("threads");
+    let threads = *sub_matches.get_one::<usize>("threads").unwrap_or(&10);
 
-    if let Some(url) = url {
-        println!("Fuzzing URL: {}", url);
-    }
-    if let Some(hosts_file) = hosts_file {
-        println!("Fuzzing hosts from file: {}", hosts_file.display());
-    }
-    if let Some(wordlist_file) = wordlist_file {
-        println!("Using wordlist: {}", wordlist_file.display());
-    }
-    if let Some(threads) = threads {
-        println!("Using {} worker threads", threads);
-    }
-    // TODO: Implement fuzzing logic
-    println!("Note: Fuzzing not yet implemented. Use crawl for now.");
+    // Load URLs from source
+    let urls = match load_urls_from_source(url, hosts_file) {
+        Ok(urls) => urls,
+        Err(e) => {
+            eprintln!("✗ {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    // Load wordlist - use default if not specified
+    let default_wordlist_path = {
+        let expanded = shellexpand::tilde("~/.config/rinzler/wordlists/default.txt");
+        std::path::PathBuf::from(expanded.as_ref())
+    };
+
+    let wordlist_path = wordlist_file
+        .cloned()
+        .unwrap_or(default_wordlist_path);
+
+    let wordlist = match rinzler_core::fuzz::load_wordlist(&wordlist_path) {
+        Ok(words) => words,
+        Err(e) => {
+            eprintln!("✗ Failed to load wordlist: {}", e);
+            eprintln!("  Try specifying a wordlist with -w or ensure the default wordlist exists");
+            std::process::exit(1);
+        }
+    };
+
+    // Print fuzz configuration
+    println!("\n🎯 Fuzzing {} target(s)", urls.len());
+    println!("Workers: {}", threads);
+    println!("Wordlist: {} entries from {}", wordlist.len(), wordlist_path.display());
+    println!("Total requests: {}\n", urls.len() * wordlist.len());
+
+    // Execute fuzzing
+    let options = rinzler_core::fuzz::FuzzOptions {
+        base_urls: urls,
+        wordlist,
+        threads,
+        show_progress_bars: true,
+    };
+
+    let results = match rinzler_core::fuzz::execute_fuzz(options).await {
+        Ok(results) => results,
+        Err(e) => {
+            eprintln!("✗ Fuzzing failed: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    println!("\n✓ Fuzzing complete!\n");
+
+    // Generate and display report
+    let report = rinzler_core::fuzz::generate_fuzz_report(&results);
+    Pager::with_pager("less -R").setup();
+    print!("{}", report);
 }
 
 pub fn handle_plugin_list() {

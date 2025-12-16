@@ -1639,6 +1639,7 @@ version = "0.1.10-alpha"
 dependencies = [
  "chrono",
  "indicatif",
+ "reqwest",
  "rinzler-scanner",
  "rusqlite",
  "serde",
