@@ -18,5 +18,5 @@ crossterm.workspace = true
 anyhow.workspace = true
 tokio.workspace = true
 url.workspace = true
-rinzler-core = { version = "0.1.18-alpha-251215020518", path = "../rinzler-core" }
-rinzler-scanner = { version = "0.1.18-alpha-251215020518", path = "../rinzler-scanner" }
+rinzler-core = { version = "0.1.10-alpha", path = "../rinzler-core" }
+rinzler-scanner = { version = "0.1.10-alpha", path = "../rinzler-scanner" }

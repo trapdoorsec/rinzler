@@ -14,7 +14,7 @@ This is a Rust workspace with three crates:
 - **rinzler-core**: Core library with crawl orchestration, database management, and reporting
 - **rinzler-scanner**: Scanner implementation library with HTML crawling and link extraction
 
-All workspace crates use shared version `0.1.9-alpha` and Rust edition 2024.
+All workspace crates use shared version `0.1.19-alpha-251216023011` and Rust edition 2024.
 
 ## Key Dependencies
 
@@ -192,15 +192,6 @@ The main binary uses clap for argument parsing with custom styling (via clap-car
 
 ### Edition 2024
 This project uses Rust edition 2024. Be aware of edition-specific features and syntax when making changes.
-
-## Version Management
-
-The project uses an automatic version increment system via git pre-commit hook:
-- The patch/build number (third digit) increments automatically on each commit
-- Hook is installed at `.git/hooks/pre-commit`
-- To reinstall or set up on a new clone: `./scripts/install-hooks.sh`
-- To skip version increment for a single commit: `git commit --no-verify`
-- Manual version changes (major/minor bumps) should be done by editing `Cargo.toml` directly
 
 ## Security Context
 

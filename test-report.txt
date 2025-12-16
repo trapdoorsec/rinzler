@@ -2,18 +2,18 @@
                         RINZLER SECURITY SCAN REPORT
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Session ID:   5bd4dfa6-8fe2-45ec-b2df-1caa5c63945c
+Session ID:   a4ba6266-c15b-4804-a163-9101ba11f3b2
 Status:       Completed
-Scan Date:    2025-12-15 15:58:46 UTC
-Duration:     1 seconds
-Targets:      https://example.com/
+Scan Date:    2025-12-15 16:03:22 UTC
+Duration:     0 seconds
+Targets:      http://localhost:3000/
 Pages Found:  1
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 SITE MAP
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-└── example.com/  [✓ 200] html
+└── localhost/  [✓ 200] html
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 EXECUTIVE SUMMARY

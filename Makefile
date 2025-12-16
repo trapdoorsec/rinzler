@@ -2,7 +2,7 @@
 # A somewhat intelligent Web API scanner
 
 .PHONY: help build test clean fmt clippy check run install release publish doc ci all install-tools
-.PHONY: bump-major bump-minor bump-patch version-set tag-release publish-full
+.PHONY: tag-release
 
 # Default target
 .DEFAULT_GOAL := help
@@ -127,73 +127,6 @@ publish: ## Publish all crates to crates.io (requires auth)
 		echo "$(YELLOW)Publish cancelled.$(RESET)"; \
 	fi
 
-publish-full: ## Complete release workflow: bump, test, tag, publish, and push
-	@echo "$(CYAN)═══════════════════════════════════════════════$(RESET)"
-	@echo "$(CYAN)  RINZLER RELEASE WORKFLOW$(RESET)"
-	@echo "$(CYAN)═══════════════════════════════════════════════$(RESET)"
-	@echo ""
-	@VERSION=$$(grep -m 1 '^version' Cargo.toml | awk -F'"' '{print $$2}'); \
-	echo "$(YELLOW)Current version: $$VERSION$(RESET)"; \
-	echo "$(YELLOW)What type of release?$(RESET)"; \
-	echo "  1) Patch (0.1.2 -> 0.1.3)"; \
-	echo "  2) Minor (0.1.2 -> 0.2.0)"; \
-	echo "  3) Major (0.1.2 -> 1.0.0)"; \
-	echo "  4) Custom version"; \
-	echo ""; \
-	read -p "Select [1-4]: " choice; \
-	case $$choice in \
-		1) $(MAKE) bump-patch ;; \
-		2) $(MAKE) bump-minor ;; \
-		3) $(MAKE) bump-major ;; \
-		4) read -p "Enter version (e.g., 1.0.0-beta): " version; \
-		   $(MAKE) version-set VERSION=$$version ;; \
-		*) echo "$(RED)Invalid choice$(RESET)"; exit 1 ;; \
-	esac; \
-	NEW_VERSION=$$(grep -m 1 '^version' Cargo.toml | awk -F'"' '{print $$2}'); \
-	echo ""; \
-	echo "$(GREEN)Version updated to $$NEW_VERSION$(RESET)"; \
-	echo ""; \
-	echo "$(CYAN)Running full test suite...$(RESET)"; \
-	if ! $(MAKE) ci; then \
-		echo "$(RED)Tests failed! Aborting release.$(RESET)"; \
-		exit 1; \
-	fi; \
-	echo ""; \
-	echo "$(CYAN)Running dry-run publish...$(RESET)"; \
-	if ! $(MAKE) publish-dry; then \
-		echo "$(RED)Dry-run failed! Aborting release.$(RESET)"; \
-		exit 1; \
-	fi; \
-	echo ""; \
-	echo "$(YELLOW)Ready to publish version $$NEW_VERSION$(RESET)"; \
-	echo "$(YELLOW)This will:$(RESET)"; \
-	echo "  1. Commit version changes"; \
-	echo "  2. Create and push git tag v$$NEW_VERSION"; \
-	echo "  3. Publish to crates.io"; \
-	echo "  4. Push commits to remote"; \
-	echo ""; \
-	read -p "Proceed with release? [y/N]: " confirm; \
-	if [ "$$confirm" = "y" ] || [ "$$confirm" = "Y" ]; then \
-		echo ""; \
-		echo "$(GREEN)Committing version changes...$(RESET)"; \
-		git add Cargo.toml Cargo.lock rinzler/Cargo.toml rinzler-core/Cargo.toml; \
-		git commit -m "Release v$$NEW_VERSION" --no-verify; \
-		echo "$(GREEN)Creating and pushing tag...$(RESET)"; \
-		$(MAKE) tag-release; \
-		echo "$(GREEN)Publishing to crates.io...$(RESET)"; \
-		$(MAKE) publish; \
-		echo "$(GREEN)Pushing commits...$(RESET)"; \
-		git push; \
-		echo ""; \
-		echo "$(CYAN)═══════════════════════════════════════════════$(RESET)"; \
-		echo "$(GREEN)  RELEASE v$$NEW_VERSION COMPLETE!$(RESET)"; \
-		echo "$(CYAN)═══════════════════════════════════════════════$(RESET)"; \
-	else \
-		echo "$(YELLOW)Release cancelled.$(RESET)"; \
-		echo "$(YELLOW)Note: Version was bumped but not committed.$(RESET)"; \
-		echo "$(YELLOW)Run 'git restore .' to revert changes.$(RESET)"; \
-	fi
-
 ci: fmt-check clippy test ## Run CI pipeline (fmt, clippy, test)
 	@echo "$(GREEN)CI pipeline passed!$(RESET)"
 
@@ -244,27 +177,6 @@ version: ## Show current version
 	@echo "$(CYAN)Rinzler Version:$(RESET)"
 	@grep -m 1 '^version' Cargo.toml | awk -F'"' '{print $$2}'
 
-bump-patch: ## Bump patch version (0.1.2 -> 0.1.3)
-	@echo "$(GREEN)Bumping patch version...$(RESET)"
-	@./scripts/bump-version.sh patch
-
-bump-minor: ## Bump minor version (0.1.2 -> 0.2.0)
-	@echo "$(GREEN)Bumping minor version...$(RESET)"
-	@./scripts/bump-version.sh minor
-
-bump-major: ## Bump major version (0.1.2 -> 1.0.0)
-	@echo "$(GREEN)Bumping major version...$(RESET)"
-	@./scripts/bump-version.sh major
-
-version-set: ## Set specific version (usage: make version-set VERSION=1.0.0-beta)
-	@if [ -z "$(VERSION)" ]; then \
-		echo "$(RED)ERROR: VERSION not set$(RESET)"; \
-		echo "Usage: make version-set VERSION=1.0.0-beta"; \
-		exit 1; \
-	fi
-	@echo "$(GREEN)Setting version to $(VERSION)...$(RESET)"
-	@./scripts/bump-version.sh set $(VERSION)
-
 tag-release: ## Create and push git tag for current version
 	@VERSION=$$(grep -m 1 '^version' Cargo.toml | awk -F'"' '{print $$2}'); \
 	echo "$(GREEN)Creating tag v$$VERSION...$(RESET)"; \
@@ -276,12 +188,6 @@ tag-release: ## Create and push git tag for current version
 deps-tree: ## Show dependency tree
 	@echo "$(GREEN)Dependency tree:$(RESET)"
 	cargo tree
-
-.PHONY: setup-hooks
-setup-hooks: ## Install git hooks
-	@echo "$(GREEN)Installing git hooks...$(RESET)"
-	./scripts/install-hooks.sh
-	@echo "$(GREEN)Hooks installed!$(RESET)"
 
 install-tools: ## Install optional cargo tools (audit, bloat, watch)
 	@echo "$(GREEN)Installing optional cargo tools...$(RESET)"

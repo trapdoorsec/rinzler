@@ -2,70 +2,23 @@
 
 This document describes the release process for Rinzler.
 
-## Quick Release (Recommended)
+## Release Process
 
-For most releases, use the automated workflow:
+### 1. Update Version Numbers
 
-```bash
-make publish-full
-```
-
-This interactive command will:
-1. Ask you what type of version bump (major/minor/patch/custom)
-2. Update all version numbers
-3. Run the full CI pipeline (format, lint, test)
-4. Run a dry-run publish check
-5. Ask for confirmation
-6. Commit the version changes
-7. Create and push a git tag
-8. Publish to crates.io
-9. Push commits to remote
-
-**Example session:**
-```
-$ make publish-full
-Current version: 0.1.12-alpha
-What type of release?
-  1) Patch (0.1.2 -> 0.1.3)
-  2) Minor (0.1.2 -> 0.2.0)
-  3) Major (0.1.2 -> 1.0.0)
-  4) Custom version
-
-Select [1-4]: 1
-
-Version updated to 0.1.13-alpha
-
-Running full test suite...
-[tests run...]
-
-Running dry-run publish...
-[dry-run checks...]
-
-Ready to publish version 0.1.13-alpha
-This will:
-  1. Commit version changes
-  2. Create and push git tag v0.1.13-alpha
-  3. Publish to crates.io
-  4. Push commits to remote
-
-Proceed with release? [y/N]: y
-```
-
-## Manual Release Process
-
-If you need more control, you can run each step manually:
-
-### 1. Version Bumping
+Manually update the version in the workspace Cargo.toml:
 
 ```bash
-# Bump version
-make bump-patch   # 0.1.2 -> 0.1.3
-make bump-minor   # 0.1.2 -> 0.2.0
-make bump-major   # 0.1.2 -> 1.0.0
+# Edit Cargo.toml and update the version field
+vim Cargo.toml
 
-# Or set a specific version
-make version-set VERSION=1.0.0-beta
+# Update the version in rinzler-core dependency reference
+vim rinzler-core/Cargo.toml
 ```
+
+Ensure all version numbers match across:
+- `Cargo.toml` (workspace.package.version)
+- `rinzler-core/Cargo.toml` (rinzler-scanner dependency version)
 
 ### 2. Run Tests
 
@@ -89,11 +42,9 @@ Verifies that all crates can be published without actually publishing.
 ### 4. Commit Version Changes
 
 ```bash
-git add Cargo.toml Cargo.lock rinzler/Cargo.toml rinzler-core/Cargo.toml
-git commit -m "Release vX.Y.Z" --no-verify
+git add Cargo.toml Cargo.lock rinzler/Cargo.toml rinzler-core/Cargo.toml rinzler-scanner/Cargo.toml
+git commit -m "Release vX.Y.Z"
 ```
-
-Note: Use `--no-verify` to skip the pre-commit hook that adds timestamps.
 
 ### 5. Create and Push Tag
 
@@ -127,23 +78,9 @@ This will publish in order:
 git push
 ```
 
-## Development vs Release Versions
-
-### Development Builds
-- Git pre-commit hook automatically appends timestamp
-- Format: `0.1.12-alpha-251215143022`
-- Happens on every commit during development
-- Provides unique, sortable version for each commit
-
-### Release Builds
-- Manual version bumps via Makefile
-- Format: `0.1.13-alpha` (no timestamp)
-- Clean semantic versions for published releases
-- Commit with `--no-verify` to skip timestamp hook
-
 ## Pre-Release Checklist
 
-Before running `make publish-full`:
+Before publishing:
 
 - [ ] Update CHANGELOG.md with release notes
 - [ ] Ensure all tests pass locally (`make test`)
