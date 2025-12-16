@@ -2,10 +2,12 @@
 
 use crate::data::Database;
 use rusqlite::Result;
+use serde::{Serialize, Deserialize};
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ReportFormat {
     Text,
     Json,
@@ -27,21 +29,26 @@ impl ReportFormat {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReportData {
     pub session_id: String,
     pub total_nodes: usize,
     pub findings: Vec<FindingData>,
     pub severity_counts: SeverityCounts,
     pub scan_info: ScanInfo,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub sitemap_nodes: Option<Vec<SitemapNode>>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SitemapNode {
     pub url: String,
     pub status_code: u16,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub content_type: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FindingData {
     pub id: i64,
     pub severity: String,
@@ -49,12 +56,17 @@ pub struct FindingData {
     pub description: String,
     pub url: String,
     pub finding_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub cwe_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub owasp_category: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub impact: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub remediation: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SeverityCounts {
     pub critical: i64,
     pub high: i64,
@@ -63,8 +75,10 @@ pub struct SeverityCounts {
     pub info: i64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScanInfo {
     pub start_time: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub end_time: Option<i64>,
     pub status: String,
     pub seed_urls: String,
@@ -291,6 +305,53 @@ pub fn generate_text_report(data: &ReportData) -> String {
     report
 }
 
+pub fn generate_json_report(data: &ReportData) -> Result<String, serde_json::Error> {
+    // Create a structured JSON report with enhanced metadata
+    let json_report = serde_json::json!({
+        "report": {
+            "metadata": {
+                "generator": "Rinzler",
+                "version": env!("CARGO_PKG_VERSION"),
+                "generated_at": chrono::Utc::now().to_rfc3339(),
+                "format": "json",
+                "disclaimer": "For authorized security testing only"
+            },
+            "session": {
+                "id": data.session_id,
+                "status": data.scan_info.status,
+                "start_time": format_iso8601_timestamp(data.scan_info.start_time),
+                "end_time": data.scan_info.end_time.map(format_iso8601_timestamp),
+                "duration_seconds": data.scan_info.end_time.map(|end| end - data.scan_info.start_time),
+                "targets": parse_targets(&data.scan_info.seed_urls)
+            },
+            "summary": {
+                "total_pages": data.total_nodes,
+                "total_findings": data.severity_counts.critical
+                    + data.severity_counts.high
+                    + data.severity_counts.medium
+                    + data.severity_counts.low
+                    + data.severity_counts.info,
+                "severity_breakdown": {
+                    "critical": data.severity_counts.critical,
+                    "high": data.severity_counts.high,
+                    "medium": data.severity_counts.medium,
+                    "low": data.severity_counts.low,
+                    "info": data.severity_counts.info
+                }
+            },
+            "findings": data.findings,
+            "sitemap": data.sitemap_nodes.as_ref().map(|nodes| {
+                serde_json::json!({
+                    "total_nodes": nodes.len(),
+                    "nodes": nodes
+                })
+            })
+        }
+    });
+
+    serde_json::to_string_pretty(&json_report)
+}
+
 pub fn save_report(content: &str, path: &Path) -> std::io::Result<()> {
     let mut file = File::create(path)?;
     file.write_all(content.as_bytes())?;
@@ -468,4 +529,17 @@ fn generate_sitemap_tree(nodes: &[SitemapNode]) -> String {
     }
 
     result
+}
+
+fn format_iso8601_timestamp(timestamp: i64) -> String {
+    use chrono::{DateTime, Utc};
+    let datetime = DateTime::<Utc>::from_timestamp(timestamp, 0)
+        .unwrap_or_else(|| Utc::now());
+    datetime.to_rfc3339()
+}
+
+fn parse_targets(seed_urls_json: &str) -> serde_json::Value {
+    serde_json::from_str::<Vec<String>>(seed_urls_json)
+        .map(|urls| serde_json::json!(urls))
+        .unwrap_or_else(|_| serde_json::json!([]))
 }

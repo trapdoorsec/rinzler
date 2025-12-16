@@ -491,8 +491,13 @@ pub async fn handle_crawl(sub_matches: &ArgMatches) {
                 let report_content = match format {
                     "text" => rinzler_core::report::generate_text_report(&report_data),
                     "json" => {
-                        println!("  {} JSON format not yet implemented", "⚠".yellow());
-                        String::new()
+                        match rinzler_core::report::generate_json_report(&report_data) {
+                            Ok(json) => json,
+                            Err(e) => {
+                                eprintln!("  {} Failed to generate JSON: {}", "✗".red(), e);
+                                String::new()
+                            }
+                        }
                     }
                     "csv" => {
                         println!("  {} CSV format not yet implemented", "⚠".yellow());
