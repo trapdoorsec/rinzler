@@ -3,12 +3,12 @@
 use colored::Colorize;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use reqwest::Client;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::{Mutex, Semaphore};
+use tokio::sync::Mutex;
 use url::Url;
 
 /// Result of a fuzz attempt
@@ -124,10 +124,21 @@ pub async fn execute_fuzz(options: FuzzOptions) -> Result<Vec<FuzzResult>, Strin
     let results: Arc<Mutex<Vec<FuzzResult>>> = Arc::new(Mutex::new(Vec::new()));
     let hits_display: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
 
-    // Create dynamic work queue and tested URLs set
-    let work_queue: Arc<Mutex<Vec<(String, FuzzSource)>>> = Arc::new(Mutex::new(urls_to_test));
-    let tested_urls: Arc<Mutex<std::collections::HashSet<String>>> =
-        Arc::new(Mutex::new(std::collections::HashSet::new()));
+    // Create worker-owned queues with work stealing
+    // Each worker has its own queue: VecDeque<(url, source)>
+    let worker_queues: Arc<Vec<Mutex<VecDeque<(String, FuzzSource)>>>> =
+        Arc::new((0..threads).map(|_| Mutex::new(VecDeque::new())).collect());
+
+    // Distribute initial URLs evenly across workers
+    for (idx, (url, source)) in urls_to_test.into_iter().enumerate() {
+        let worker_id = idx % threads;
+        worker_queues[worker_id]
+            .try_lock()
+            .unwrap()
+            .push_back((url, source));
+    }
+
+    let tested_urls: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::new()));
     let wordlist_arc = Arc::new(wordlist);
 
     // Create hits display progress bar (sticky at top)
@@ -155,10 +166,7 @@ pub async fn execute_fuzz(options: FuzzOptions) -> Result<Vec<FuzzResult>, Strin
             .map_err(|e| format!("Failed to create HTTP client: {}", e))?,
     );
 
-    // Create semaphore to limit concurrent requests
-    let semaphore = Arc::new(Semaphore::new(threads));
-
-    // Spawn workers that pull from shared queue
+    // Spawn workers with work stealing
     let mut worker_tasks = Vec::new();
 
     for worker_id in 0..threads {
@@ -181,8 +189,7 @@ pub async fn execute_fuzz(options: FuzzOptions) -> Result<Vec<FuzzResult>, Strin
         let results_clone = results.clone();
         let hits_display_clone = hits_display.clone();
         let hits_pb_clone = hits_pb.clone();
-        let semaphore_clone = semaphore.clone();
-        let work_queue_clone = work_queue.clone();
+        let worker_queues_clone = worker_queues.clone();
         let tested_urls_clone = tested_urls.clone();
         let wordlist_clone = wordlist_arc.clone();
 
@@ -190,14 +197,28 @@ pub async fn execute_fuzz(options: FuzzOptions) -> Result<Vec<FuzzResult>, Strin
             let mut processed = 0;
 
             loop {
-                // Try to get work from queue
+                // Try to get work from own queue
                 let work_item = {
-                    let mut queue = work_queue_clone.lock().await;
-                    queue.pop()
+                    let mut queue = worker_queues_clone[worker_id].lock().await;
+                    queue.pop_front()
                 };
 
-                let Some((url, source)) = work_item else {
-                    break; // No more work
+                let (url, source) = if let Some(item) = work_item {
+                    item
+                } else {
+                    // Own queue is empty - try to steal from other workers
+                    let stolen = try_steal_fuzz_work(worker_id, &worker_queues_clone).await;
+                    if let Some(item) = stolen {
+                        item
+                    } else {
+                        // No work available anywhere - check if all queues are truly empty
+                        if all_fuzz_queues_empty(&worker_queues_clone).await {
+                            break; // All done
+                        }
+                        // Queues might have new work, try again
+                        tokio::time::sleep(Duration::from_millis(10)).await;
+                        continue;
+                    }
                 };
 
                 // Extract path for display
@@ -215,9 +236,6 @@ pub async fn execute_fuzz(options: FuzzOptions) -> Result<Vec<FuzzResult>, Strin
                     pb.set_message(msg);
                 }
 
-                // Acquire semaphore permit
-                let _permit = semaphore_clone.acquire().await.unwrap();
-
                 // Make request
                 if let Ok(mut result) =
                     make_fuzz_request(&client_clone, &url, use_head_requests).await
@@ -229,7 +247,7 @@ pub async fn execute_fuzz(options: FuzzOptions) -> Result<Vec<FuzzResult>, Strin
                         results_clone.lock().await.push(result.clone());
                     }
 
-                    // If we found a new endpoint (200-399), add it to queue for fuzzing
+                    // If we found a new endpoint (200-399), add it to this worker's queue
                     if (200..400).contains(&result.status_code) {
                         // Display the hit
                         let hit_display = format_hit(&result);
@@ -250,11 +268,11 @@ pub async fn execute_fuzz(options: FuzzOptions) -> Result<Vec<FuzzResult>, Strin
                             if !tested.contains(&base_url) {
                                 tested.insert(base_url.clone());
 
-                                // Generate new fuzz targets from this discovered endpoint
-                                let mut queue = work_queue_clone.lock().await;
+                                // Generate new fuzz targets and add to this worker's queue (route affinity)
+                                let mut queue = worker_queues_clone[worker_id].lock().await;
                                 for word in wordlist_clone.iter() {
                                     if let Ok(new_url) = build_test_url(&base_url, word) {
-                                        queue.push((new_url, FuzzSource::Discovered));
+                                        queue.push_back((new_url, FuzzSource::Discovered));
                                     }
                                 }
                             }
@@ -290,6 +308,38 @@ pub async fn execute_fuzz(options: FuzzOptions) -> Result<Vec<FuzzResult>, Strin
     let final_results = results.lock().await.clone();
 
     Ok(final_results)
+}
+
+/// Try to steal work from other workers
+async fn try_steal_fuzz_work(
+    worker_id: usize,
+    worker_queues: &Arc<Vec<Mutex<VecDeque<(String, FuzzSource)>>>>,
+) -> Option<(String, FuzzSource)> {
+    // Try to steal from each other worker
+    for target_id in 0..worker_queues.len() {
+        if target_id == worker_id {
+            continue; // Don't steal from self
+        }
+
+        let mut target_queue = worker_queues[target_id].lock().await;
+        if let Some(item) = target_queue.pop_back() {
+            return Some(item);
+        }
+    }
+
+    None
+}
+
+/// Check if all worker queues are empty
+async fn all_fuzz_queues_empty(
+    worker_queues: &Arc<Vec<Mutex<VecDeque<(String, FuzzSource)>>>>,
+) -> bool {
+    for queue in worker_queues.iter() {
+        if !queue.lock().await.is_empty() {
+            return false;
+        }
+    }
+    true
 }
 
 /// Extract path component from URL for display
@@ -417,7 +467,7 @@ async fn make_fuzz_request(
 }
 
 /// Extract base URL from a full URL (removes query params and fragments)
-fn extract_base_url(url: &str) -> Result<String, String> {
+pub fn extract_base_url(url: &str) -> Result<String, String> {
     let parsed = Url::parse(url).map_err(|e| format!("Invalid URL: {}", e))?;
     let mut base = parsed.clone();
     base.set_query(None);
@@ -472,7 +522,7 @@ fn query_database_endpoints(
 }
 
 /// Build a test URL from base URL and wordlist entry
-fn build_test_url(base_url: &str, word: &str) -> Result<String, String> {
+pub fn build_test_url(base_url: &str, word: &str) -> Result<String, String> {
     let mut url =
         Url::parse(base_url).map_err(|e| format!("Invalid base URL '{}': {}", base_url, e))?;
 

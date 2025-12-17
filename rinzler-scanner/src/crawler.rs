@@ -1,9 +1,8 @@
 use crate::error::{Result, ScanError};
 use crate::result::CrawlResult;
-use futures::stream::{self, StreamExt};
 use reqwest::Client;
 use scraper::{Html, Selector};
-use std::collections::HashSet;
+use std::collections::{HashSet, VecDeque};
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::Mutex;
@@ -99,66 +98,111 @@ impl Crawler {
             visited.insert(start_url.to_string());
         }
 
-        // Crawl the initial URL
-        let mut to_crawl = vec![start_url.to_string()];
-        let mut depth = 0;
+        // Create worker-owned queues with work stealing
+        // Each worker has its own queue: VecDeque<(url, depth)>
+        let worker_queues: Arc<Vec<Mutex<VecDeque<(String, usize)>>>> =
+            Arc::new((0..workers).map(|_| Mutex::new(VecDeque::new())).collect());
 
-        while depth < self.max_depth && !to_crawl.is_empty() {
-            info!(
-                "Crawling depth {}/{}, {} URLs to process",
-                depth + 1,
-                self.max_depth,
-                to_crawl.len()
-            );
+        // Initialize worker 0's queue with the starting URL
+        {
+            let mut queue = worker_queues[0].lock().await;
+            queue.push_back((start_url.to_string(), 0));
+        }
 
-            // Process URLs in parallel using stream
-            let urls_to_process: Vec<_> = std::mem::take(&mut to_crawl);
+        // Spawn worker tasks
+        let mut worker_handles = Vec::new();
 
-            let results: Vec<_> = stream::iter(urls_to_process.into_iter().enumerate())
-                .map(|(worker_id, url)| {
-                    let client = self.client.clone();
-                    let base_domain = base_domain.clone();
-                    let progress_cb = self.progress_callback.clone();
+        for worker_id in 0..workers {
+            let client = self.client.clone();
+            let base_domain = base_domain.clone();
+            let progress_cb = self.progress_callback.clone();
+            let cross_domain_cb = self.cross_domain_callback.clone();
+            let auto_follow = self.auto_follow;
+            let max_depth = self.max_depth;
+            let visited = self.visited.clone();
+            let results = self.results.clone();
+            let worker_queues_clone = worker_queues.clone();
 
-                    async move {
-                        // Report progress
-                        if let Some(ref callback) = progress_cb {
-                            callback(worker_id, url.clone());
+            let handle = tokio::spawn(async move {
+                loop {
+                    // Try to get work from own queue
+                    let work_item = {
+                        let mut queue = worker_queues_clone[worker_id].lock().await;
+                        queue.pop_front()
+                    };
+
+                    let (url, depth) = if let Some(item) = work_item {
+                        item
+                    } else {
+                        // Own queue is empty - try to steal from other workers
+                        let stolen = Self::try_steal_work(worker_id, &worker_queues_clone).await;
+                        if let Some(item) = stolen {
+                            item
+                        } else {
+                            // No work available anywhere - check if all queues are truly empty
+                            if Self::all_queues_empty(&worker_queues_clone).await {
+                                break; // All done
+                            }
+                            // Queues might have new work, try again
+                            tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+                            continue;
                         }
+                    };
 
-                        self.fetch_and_parse(&client, &url, &base_domain).await
+                    // Check depth limit
+                    if depth >= max_depth {
+                        continue;
                     }
-                })
-                .buffer_unordered(workers)
-                .collect()
-                .await;
 
-            // Process results and collect new URLs
-            for result in results {
-                match result {
-                    Ok((crawl_result, new_urls)) => {
-                        // Store the result
-                        {
-                            let mut results = self.results.lock().await;
-                            results.push(crawl_result);
-                        }
+                    // Report progress
+                    if let Some(ref callback) = progress_cb {
+                        callback(worker_id, url.clone());
+                    }
 
-                        // Add new URLs to the queue if they haven't been visited
-                        for new_url in new_urls {
-                            let mut visited = self.visited.lock().await;
-                            if !visited.contains(&new_url) {
-                                visited.insert(new_url.clone());
-                                to_crawl.push(new_url);
+                    // Fetch and parse the URL
+                    match Self::fetch_and_parse_static(
+                        &client,
+                        &url,
+                        &base_domain,
+                        &cross_domain_cb,
+                        auto_follow,
+                    )
+                    .await
+                    {
+                        Ok((crawl_result, new_urls)) => {
+                            // Store the result
+                            {
+                                let mut results_lock = results.lock().await;
+                                results_lock.push(crawl_result);
+                            }
+
+                            // Add new URLs to this worker's queue (route affinity)
+                            let mut queue = worker_queues_clone[worker_id].lock().await;
+                            for new_url in new_urls {
+                                let mut visited_lock = visited.lock().await;
+                                if !visited_lock.contains(&new_url) {
+                                    visited_lock.insert(new_url.clone());
+                                    queue.push_back((new_url, depth + 1));
+                                }
                             }
                         }
-                    }
-                    Err(e) => {
-                        warn!("Crawl error: {}", e);
+                        Err(e) => {
+                            warn!("Crawl error for {}: {}", url, e);
+                        }
                     }
                 }
-            }
 
-            depth += 1;
+                debug!("Worker {} finished", worker_id);
+            });
+
+            worker_handles.push(handle);
+        }
+
+        // Wait for all workers to complete
+        for handle in worker_handles {
+            handle
+                .await
+                .map_err(|e| ScanError::Other(format!("Worker task failed: {}", e)))?;
         }
 
         let results = self.results.lock().await;
@@ -166,11 +210,44 @@ impl Crawler {
         Ok(results.clone())
     }
 
-    async fn fetch_and_parse(
-        &self,
+    /// Try to steal work from other workers
+    async fn try_steal_work(
+        worker_id: usize,
+        worker_queues: &Arc<Vec<Mutex<VecDeque<(String, usize)>>>>,
+    ) -> Option<(String, usize)> {
+        // Try to steal from each other worker
+        for target_id in 0..worker_queues.len() {
+            if target_id == worker_id {
+                continue; // Don't steal from self
+            }
+
+            let mut target_queue = worker_queues[target_id].lock().await;
+            if let Some(item) = target_queue.pop_back() {
+                debug!("Worker {} stole work from worker {}", worker_id, target_id);
+                return Some(item);
+            }
+        }
+
+        None
+    }
+
+    /// Check if all worker queues are empty
+    async fn all_queues_empty(worker_queues: &Arc<Vec<Mutex<VecDeque<(String, usize)>>>>) -> bool {
+        for queue in worker_queues.iter() {
+            if !queue.lock().await.is_empty() {
+                return false;
+            }
+        }
+        true
+    }
+
+    /// Static version of fetch_and_parse for use in spawned tasks
+    async fn fetch_and_parse_static(
         client: &Client,
         url: &str,
         base_domain: &str,
+        cross_domain_callback: &Option<CrossDomainCallback>,
+        auto_follow: bool,
     ) -> Result<(CrawlResult, Vec<String>)> {
         debug!("Fetching {}", url);
 
@@ -203,7 +280,13 @@ impl Crawler {
         let mut new_urls = Vec::new();
 
         if is_html {
-            let (links, forms, scripts) = self.extract_elements(&body, url, base_domain)?;
+            let (links, forms, scripts) = Self::extract_elements_static(
+                &body,
+                url,
+                base_domain,
+                cross_domain_callback,
+                auto_follow,
+            )?;
             result.links_found = links.clone();
             result.forms_found = forms;
             result.scripts_found = scripts;
@@ -213,11 +296,13 @@ impl Crawler {
         Ok((result, new_urls))
     }
 
-    fn extract_elements(
-        &self,
+    /// Static version of extract_elements for use in spawned tasks
+    fn extract_elements_static(
         html: &str,
         current_url: &str,
         base_domain: &str,
+        cross_domain_callback: &Option<CrossDomainCallback>,
+        auto_follow: bool,
     ) -> Result<(Vec<String>, usize, usize)> {
         let document = Html::parse_document(html);
 
@@ -227,13 +312,13 @@ impl Crawler {
 
         for element in document.select(&link_selector) {
             if let Some(href) = element.value().attr("href")
-                && let Some(absolute_url) = self.resolve_url(current_url, href)
+                && let Some(absolute_url) = Self::resolve_url_static(current_url, href)
             {
-                if self.is_same_domain(&absolute_url, base_domain) {
+                if Self::is_same_domain_static(&absolute_url, base_domain) {
                     links.push(absolute_url);
-                } else if !self.auto_follow {
+                } else if !auto_follow {
                     // Cross-domain link found and auto_follow is false
-                    if let Some(ref callback) = self.cross_domain_callback
+                    if let Some(callback) = cross_domain_callback
                         && callback(absolute_url.clone(), base_domain.to_string())
                     {
                         links.push(absolute_url);
@@ -253,7 +338,7 @@ impl Crawler {
         Ok((links, forms_count, scripts_count))
     }
 
-    fn resolve_url(&self, base: &str, href: &str) -> Option<String> {
+    fn resolve_url_static(base: &str, href: &str) -> Option<String> {
         // Skip empty, javascript:, mailto:, tel:, etc.
         if href.is_empty()
             || href.starts_with("javascript:")
@@ -274,7 +359,7 @@ impl Crawler {
         Some(url.to_string())
     }
 
-    fn is_same_domain(&self, url: &str, base_domain: &str) -> bool {
+    fn is_same_domain_static(url: &str, base_domain: &str) -> bool {
         if let Ok(parsed) = Url::parse(url)
             && let Some(host) = parsed.host_str()
         {

@@ -8,7 +8,7 @@ pub struct Database {
     conn: Connection,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Severity {
     Critical,
     High,
@@ -29,7 +29,7 @@ impl Severity {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum FindingType {
     Vulnerability,
     Misconfiguration,
