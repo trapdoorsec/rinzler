@@ -62,15 +62,15 @@ pub async fn execute_fuzz(options: FuzzOptions) -> Result<Vec<FuzzResult>, Strin
 
     // Query database for known endpoints from previous crawls
     let mut db_endpoints = Vec::new();
-    if let Some(ref db_path) = db_path {
-        if let Ok(db_urls) = query_database_endpoints(db_path, &base_urls) {
-            db_endpoints = db_urls;
-            if !db_endpoints.is_empty() {
-                println!(
-                    "✓ Found {} endpoints from previous crawls in database",
-                    db_endpoints.len()
-                );
-            }
+    if let Some(ref db_path) = db_path
+        && let Ok(db_urls) = query_database_endpoints(db_path, &base_urls)
+    {
+        db_endpoints = db_urls;
+        if !db_endpoints.is_empty() {
+            println!(
+                "✓ Found {} endpoints from previous crawls in database",
+                db_endpoints.len()
+            );
         }
     }
 
@@ -392,7 +392,7 @@ fn format_hits_display(hits: &[String]) -> String {
         display
     } else {
         // Multiple columns
-        let num_columns = (total_hits + max_per_column - 1) / max_per_column;
+        let num_columns = total_hits.div_ceil(max_per_column);
         let mut display = format!(
             "Hits: {} (showing in {} columns)\n",
             total_hits, num_columns
@@ -490,10 +490,10 @@ fn query_database_endpoints(
     // Extract domains from target URLs
     let mut target_domains = Vec::new();
     for url in target_urls {
-        if let Ok(parsed) = Url::parse(url) {
-            if let Some(host) = parsed.host_str() {
-                target_domains.push(host.to_string());
-            }
+        if let Ok(parsed) = Url::parse(url)
+            && let Some(host) = parsed.host_str()
+        {
+            target_domains.push(host.to_string());
         }
     }
 
@@ -502,17 +502,16 @@ fn query_database_endpoints(
         // Simple query - get all nodes for this domain
         let query = "SELECT url FROM nodes WHERE domain = ?";
 
-        if let Ok(mut stmt) = db.get_connection().prepare(query) {
-            if let Ok(rows) = stmt.query_map([domain], |row| row.get::<_, String>(0)) {
-                for url_result in rows.flatten() {
-                    // Only include if it's a valid URL for the target
-                    if let Ok(parsed) = Url::parse(&url_result) {
-                        if let Some(host) = parsed.host_str() {
-                            if host == domain || host.ends_with(&format!(".{}", domain)) {
-                                endpoints.push(url_result);
-                            }
-                        }
-                    }
+        if let Ok(mut stmt) = db.get_connection().prepare(query)
+            && let Ok(rows) = stmt.query_map([domain], |row| row.get::<_, String>(0))
+        {
+            for url_result in rows.flatten() {
+                // Only include if it's a valid URL for the target
+                if let Ok(parsed) = Url::parse(&url_result)
+                    && let Some(host) = parsed.host_str()
+                    && (host == domain || host.ends_with(&format!(".{}", domain)))
+                {
+                    endpoints.push(url_result);
                 }
             }
         }
@@ -568,29 +567,33 @@ pub fn load_wordlist(path: &Path) -> Result<Vec<String>, String> {
 
 /// Generate a simple fuzz report
 pub fn generate_fuzz_report(results: &[FuzzResult]) -> String {
+    // Filter out 404s
+    let filtered_results: Vec<&FuzzResult> =
+        results.iter().filter(|r| r.status_code != 404).collect();
+
     let mut report = String::new();
 
-    // Count by source
-    let initial_count = results
+    // Count by source (on filtered results)
+    let initial_count = filtered_results
         .iter()
         .filter(|r| r.source == FuzzSource::Initial)
         .count();
-    let db_count = results
+    let db_count = filtered_results
         .iter()
         .filter(|r| r.source == FuzzSource::Database)
         .count();
-    let discovered_count = results
+    let discovered_count = filtered_results
         .iter()
         .filter(|r| r.source == FuzzSource::Discovered)
         .count();
 
-    // Group by status code
+    // Group by status code (excluding 404s)
     let mut by_status: HashMap<u16, Vec<&FuzzResult>> = HashMap::new();
-    for result in results {
+    for result in &filtered_results {
         by_status
             .entry(result.status_code)
             .or_default()
-            .push(result);
+            .push(*result);
     }
 
     // Sort status codes
@@ -605,7 +608,7 @@ pub fn generate_fuzz_report(results: &[FuzzResult]) -> String {
         "═══════════════════════════════════════════════════════════════════════════════\n\n",
     );
 
-    report.push_str(&format!("Total findings: {}\n", results.len()));
+    report.push_str(&format!("Total findings: {}\n", filtered_results.len()));
     if db_count > 0 || discovered_count > 0 {
         report.push_str(&format!("  {} from initial targets\n", initial_count));
         if db_count > 0 {

@@ -219,18 +219,22 @@ pub async fn execute_crawl(
 
 /// Generate a crawl report from results
 pub fn generate_crawl_report(results: &[CrawlResult]) -> String {
+    // Filter out 404s
+    let filtered_results: Vec<&CrawlResult> =
+        results.iter().filter(|r| r.status_code != 404).collect();
+
     let mut report = String::new();
     report.push_str("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n");
     report.push_str("📊 Summary:\n");
-    report.push_str(&format!("  Pages crawled: {}\n", results.len()));
+    report.push_str(&format!("  Pages crawled: {}\n", filtered_results.len()));
 
-    let total_links: usize = results.iter().map(|r| r.links_found.len()).sum();
+    let total_links: usize = filtered_results.iter().map(|r| r.links_found.len()).sum();
     report.push_str(&format!("  Total links found: {}\n", total_links));
 
-    let total_forms: usize = results.iter().map(|r| r.forms_found).sum();
+    let total_forms: usize = filtered_results.iter().map(|r| r.forms_found).sum();
     report.push_str(&format!("  Total forms found: {}\n", total_forms));
 
-    let total_scripts: usize = results.iter().map(|r| r.scripts_found).sum();
+    let total_scripts: usize = filtered_results.iter().map(|r| r.scripts_found).sum();
     report.push_str(&format!("  Total scripts found: {}\n", total_scripts));
 
     report.push_str("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n");
@@ -238,7 +242,7 @@ pub fn generate_crawl_report(results: &[CrawlResult]) -> String {
     // Group results by host
     let mut by_host: HashMap<String, Vec<&CrawlResult>> = HashMap::new();
 
-    for result in results {
+    for result in filtered_results {
         if let Ok(url) = Url::parse(&result.url)
             && let Some(host) = url.host_str()
         {
