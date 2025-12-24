@@ -14,11 +14,11 @@ This is a Rust workspace with three crates:
 - **rinzler-core**: Core library with crawl orchestration, database management, and reporting
 - **rinzler-scanner**: Scanner implementation library with HTML crawling and link extraction
 
-All workspace crates use shared version `0.1.10-alpha` and Rust edition 2024.
+All workspace crates use shared version `0.1.11-alpha` and Rust edition 2024.
 
 ## Key Dependencies
 
-- **Async runtime**: tokio with full features
+- **Async runtime**: tokio with full features + futures for async utilities
 - **HTTP client**: reqwest with json, gzip, and cookies support
 - **CLI**: clap v4 with derive and cargo features + clap-cargo for styling
 - **Database**: rusqlite with bundled sqlite
@@ -31,6 +31,9 @@ All workspace crates use shared version `0.1.10-alpha` and Rust edition 2024.
 - **Pager**: pager for paginated output (uses less -R for color support)
 - **URL handling**: url crate for parsing and validation
 - **Path expansion**: shellexpand for tilde expansion in paths
+- **Terminal colors**: colored for colored console output
+- **UUID generation**: uuid with v4 feature for unique identifiers
+- **Date/time**: chrono for timestamp formatting
 - **Testing**: tempfile for temporary test files
 
 ## Common Commands
@@ -221,11 +224,13 @@ The main binary uses clap for argument parsing with custom styling (via clap-car
 - **Tests**: Unit tests in `rinzler/tests/handlers_tests.rs`
 
 ### Design Patterns
+- **Work-Stealing Queues**: Each worker maintains its own queue (VecDeque) of URLs to process. When a worker's queue is empty, it attempts to steal work from other workers' queues for better load balancing. Implemented in both crawler and fuzz modules.
 - **Callback Architecture**: Progress and cross-domain callbacks use `Arc<dyn Fn>` for thread-safe function sharing
 - **Worker Pools**: Tokio-based async workers with progress tracking per worker
 - **Builder Pattern**: Crawler configuration uses builder pattern for flexibility
 - **Progress UI**: indicatif MultiProgress for concurrent worker status display
 - **URL Normalization**: Automatic http:// prefix addition for URLs without schemes
+- **HTTP Client Optimizations**: Shared reqwest client with connection pooling (50 max idle/host), HTTP/2 adaptive flow control, TCP keepalive, and configurable timeouts
 
 ### Planned Components (Not Yet Implemented)
 - **Additional report formats**: CSV, HTML, and Markdown generators
