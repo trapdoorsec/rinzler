@@ -143,8 +143,8 @@ pub(crate) fn command_argument_builder() -> clap::Command {
                 .arg(
                     arg!(-w --"wordlist-file" <PATH>)
                         .required(false)
-                        .value_parser(clap::value_parser!(std::path::PathBuf))
-                        .default_value("~/.config/rinzler/wordlist"),
+                        .help("Path to wordlist file (default: ~/.config/rinzler/wordlists/default.txt)")
+                        .value_parser(clap::value_parser!(std::path::PathBuf)),
                 )
                 .arg(
                     arg!(-t --"threads" <NUM_WORKERS>)
