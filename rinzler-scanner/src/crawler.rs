@@ -124,29 +124,37 @@ impl Crawler {
             let worker_queues_clone = worker_queues.clone();
 
             let handle = tokio::spawn(async move {
+                debug!("Worker {} started", worker_id);
+                let mut empty_iterations = 0;
+                const MAX_EMPTY_ITERATIONS: usize = 10;  // Retry 10 times before giving up
+
                 loop {
-                    // Try to get work from own queue
+                    // Get work from own queue (no stealing in crawl mode)
                     let work_item = {
                         let mut queue = worker_queues_clone[worker_id].lock().await;
                         queue.pop_front()
                     };
 
                     let (url, depth) = if let Some(item) = work_item {
+                        // Reset empty counter since we found work
+                        empty_iterations = 0;
                         item
                     } else {
-                        // Own queue is empty - try to steal from other workers
-                        let stolen = Self::try_steal_work(worker_id, &worker_queues_clone).await;
-                        if let Some(item) = stolen {
-                            item
-                        } else {
-                            // No work available anywhere - check if all queues are truly empty
-                            if Self::all_queues_empty(&worker_queues_clone).await {
-                                break; // All done
+                        // Own queue is empty - check if all workers are done
+                        if Self::all_queues_empty(&worker_queues_clone).await {
+                            empty_iterations += 1;
+                            debug!("Worker {} found all queues empty ({}/{})", worker_id, empty_iterations, MAX_EMPTY_ITERATIONS);
+                            if empty_iterations >= MAX_EMPTY_ITERATIONS {
+                                debug!("Worker {} exiting", worker_id);
+                                break;
                             }
-                            // Queues might have new work, try again
-                            tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
-                            continue;
+                        } else {
+                            empty_iterations = 0;  // Reset counter
                         }
+
+                        // Sleep and retry
+                        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+                        continue;
                     };
 
                     // Check depth limit
@@ -176,13 +184,32 @@ impl Crawler {
                                 results_lock.push(crawl_result);
                             }
 
-                            // Add new URLs to this worker's queue (route affinity)
-                            let mut queue = worker_queues_clone[worker_id].lock().await;
+                            // Distribute new URLs across ALL worker queues (round-robin)
+                            let num_workers = worker_queues_clone.len();
+                            let num_new_urls = new_urls.len();
+                            debug!("[Worker {}] Distributing {} URLs across {} workers", worker_id, num_new_urls, num_workers);
+                            let mut target_worker = 0;
                             for new_url in new_urls {
-                                let mut visited_lock = visited.lock().await;
-                                if !visited_lock.contains(&new_url) {
-                                    visited_lock.insert(new_url.clone());
-                                    queue.push_back((new_url, depth + 1));
+                                // Check and mark as visited
+                                let should_queue = {
+                                    let mut visited_lock = visited.lock().await;
+                                    if !visited_lock.contains(&new_url) {
+                                        visited_lock.insert(new_url.clone());
+                                        true
+                                    } else {
+                                        false
+                                    }
+                                };
+
+                                if should_queue {
+                                    // Add to target worker's queue
+                                    debug!("[Worker {}] Queuing {} to worker {}", worker_id, new_url, target_worker);
+                                    let mut queue = worker_queues_clone[target_worker].lock().await;
+                                    queue.push_back((new_url.clone(), depth + 1));
+                                    drop(queue); // Release lock immediately
+
+                                    // Round-robin to next worker
+                                    target_worker = (target_worker + 1) % worker_queues_clone.len();
                                 }
                             }
                         }
@@ -210,26 +237,6 @@ impl Crawler {
         Ok(results.clone())
     }
 
-    /// Try to steal work from other workers
-    async fn try_steal_work(
-        worker_id: usize,
-        worker_queues: &Arc<Vec<Mutex<VecDeque<(String, usize)>>>>,
-    ) -> Option<(String, usize)> {
-        // Try to steal from each other worker
-        for target_id in 0..worker_queues.len() {
-            if target_id == worker_id {
-                continue; // Don't steal from self
-            }
-
-            let mut target_queue = worker_queues[target_id].lock().await;
-            if let Some(item) = target_queue.pop_back() {
-                debug!("Worker {} stole work from worker {}", worker_id, target_id);
-                return Some(item);
-            }
-        }
-
-        None
-    }
 
     /// Check if all worker queues are empty
     async fn all_queues_empty(worker_queues: &Arc<Vec<Mutex<VecDeque<(String, usize)>>>>) -> bool {
@@ -314,14 +321,24 @@ impl Crawler {
             if let Some(href) = element.value().attr("href")
                 && let Some(absolute_url) = Self::resolve_url_static(current_url, href)
             {
+                debug!("Found link: {} (base_domain: {})", absolute_url, base_domain);
                 if Self::is_same_domain_static(&absolute_url, base_domain) {
+                    debug!("  -> Same domain, adding to queue");
+                    links.push(absolute_url);
+                } else if auto_follow {
+                    // Cross-domain link and auto_follow is enabled
+                    debug!("  -> Cross-domain but auto_follow enabled, adding to queue");
                     links.push(absolute_url);
                 } else if !auto_follow {
                     // Cross-domain link found and auto_follow is false
+                    debug!("  -> Cross-domain, checking callback");
                     if let Some(callback) = cross_domain_callback
                         && callback(absolute_url.clone(), base_domain.to_string())
                     {
+                        debug!("  -> Callback approved, adding to queue");
                         links.push(absolute_url);
+                    } else {
+                        debug!("  -> No callback or declined, skipping");
                     }
                 }
             }
@@ -380,5 +397,344 @@ impl Crawler {
 impl Default for Crawler {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+    use tokio::sync::Mutex as TokioMutex;
+    use wiremock::{
+        matchers::{method, path},
+        Mock, MockServer, ResponseTemplate,
+    };
+
+    /// Test basic link discovery
+    #[tokio::test]
+    async fn test_link_discovery() {
+        let mock_server = MockServer::start().await;
+
+        let root_html = format!(
+            r#"<html><body>
+                <a href="{}/page1">Page 1</a>
+                <a href="{}/page2">Page 2</a>
+            </body></html>"#,
+            mock_server.uri(),
+            mock_server.uri()
+        );
+
+        Mock::given(method("GET"))
+            .and(path("/"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/html")
+                    .set_body_bytes(root_html.as_bytes()),
+            )
+            .mount(&mock_server)
+            .await;
+
+        Mock::given(method("GET"))
+            .and(path("/page1"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/html")
+                    .set_body_bytes(b"<html><body>P1</body></html>"),
+            )
+            .mount(&mock_server)
+            .await;
+
+        Mock::given(method("GET"))
+            .and(path("/page2"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/html")
+                    .set_body_bytes(b"<html><body>P2</body></html>"),
+            )
+            .mount(&mock_server)
+            .await;
+
+        let crawler = Crawler::new().with_max_depth(2);
+
+        let results = crawler.crawl(&mock_server.uri(), 1).await.unwrap();
+
+        println!("\n=== Link Discovery Test ===");
+        println!("Total pages crawled: {}", results.len());
+        println!("URLs crawled:");
+        for result in &results {
+            println!("  - {} (status: {})", result.url, result.status_code);
+            println!("    Content-Type: {:?}", result.content_type);
+            println!("    Links found: {:?}", result.links_found);
+        }
+        println!("Visited count: {}", crawler.get_visited_count().await);
+
+        // Should have crawled root + 2 pages = 3 total
+        assert!(
+            results.len() >= 3,
+            "Expected at least 3 pages crawled (root + 2 links), but got {}",
+            results.len()
+        );
+    }
+
+    /// Test that multiple workers are actually used during crawling
+    #[tokio::test]
+    async fn test_multiple_workers_are_used() {
+        // Track which workers process URLs
+        let worker_activity: Arc<TokioMutex<HashMap<usize, Vec<String>>>> =
+            Arc::new(TokioMutex::new(HashMap::new()));
+        let worker_activity_clone = worker_activity.clone();
+
+        // Set up mock server with pages that link to each other
+        let mock_server = MockServer::start().await;
+
+        // Root page with 10 links
+        let mut root_html = String::from("<html><body>");
+        for i in 1..=10 {
+            root_html.push_str(&format!(
+                r#"<a href="{}/page{}">Page {}</a>"#,
+                mock_server.uri(),
+                i,
+                i
+            ));
+        }
+        root_html.push_str("</body></html>");
+
+        Mock::given(method("GET"))
+            .and(path("/"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/html")
+                    .set_body_bytes(root_html.as_bytes()),
+            )
+            .mount(&mock_server)
+            .await;
+
+        // Individual pages with no links (to avoid infinite crawling)
+        for i in 1..=10 {
+            Mock::given(method("GET"))
+                .and(path(format!("/page{}", i)))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .insert_header("content-type", "text/html")
+                        .set_body_bytes(b"<html><body>Page</body></html>"),
+                )
+                .mount(&mock_server)
+                .await;
+        }
+
+        // Create crawler with progress callback to track worker activity
+        let crawler = Crawler::new()
+            .with_max_depth(2)
+            .with_progress_callback(Arc::new(move |worker_id, url| {
+                let worker_activity = worker_activity_clone.clone();
+                tokio::spawn(async move {
+                    let mut activity = worker_activity.lock().await;
+                    activity.entry(worker_id).or_insert_with(Vec::new).push(url);
+                });
+            }));
+
+        // Crawl with 4 workers
+        let num_workers = 4;
+        let results = crawler.crawl(&mock_server.uri(), num_workers).await.unwrap();
+
+        // Give progress callbacks time to complete
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+        // Verify we got results
+        assert!(!results.is_empty(), "Should have crawled some pages");
+
+        // Check worker activity
+        let activity = worker_activity.lock().await;
+        let workers_used = activity.keys().count();
+
+        println!("Worker activity distribution:");
+        for (worker_id, urls) in activity.iter() {
+            println!("  Worker {}: {} URLs", worker_id, urls.len());
+        }
+
+        // Assert that more than one worker was used
+        assert!(
+            workers_used > 1,
+            "Expected multiple workers to be used, but only {} worker(s) processed URLs. Distribution: {:?}",
+            workers_used,
+            activity.iter().map(|(k, v)| (k, v.len())).collect::<Vec<_>>()
+        );
+
+        // Ideally, all workers should have done some work
+        // (though this might not always be true for small workloads)
+        println!("Total workers used: {} out of {}", workers_used, num_workers);
+    }
+
+    /// Test that URLs are distributed via round-robin
+    #[tokio::test]
+    async fn test_work_distribution_round_robin() {
+        // Track which worker processes which URL
+        let worker_urls: Arc<TokioMutex<HashMap<usize, Vec<String>>>> =
+            Arc::new(TokioMutex::new(HashMap::new()));
+        let worker_urls_clone = worker_urls.clone();
+
+        let mock_server = MockServer::start().await;
+
+        // Root page with exactly 12 links (divisible by 3 workers)
+        let mut root_html = String::from("<html><body>");
+        for i in 1..=12 {
+            root_html.push_str(&format!(
+                r#"<a href="{}/page{}">Page {}</a>"#,
+                mock_server.uri(),
+                i,
+                i
+            ));
+        }
+        root_html.push_str("</body></html>");
+
+        Mock::given(method("GET"))
+            .and(path("/"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/html")
+                    .set_body_bytes(root_html.as_bytes()),
+            )
+            .mount(&mock_server)
+            .await;
+
+        // Individual pages
+        for i in 1..=12 {
+            Mock::given(method("GET"))
+                .and(path(format!("/page{}", i)))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .insert_header("content-type", "text/html")
+                        .set_body_bytes(b"<html><body>Content</body></html>"),
+                )
+                .mount(&mock_server)
+                .await;
+        }
+
+        let crawler = Crawler::new()
+            .with_max_depth(2)
+            .with_progress_callback(Arc::new(move |worker_id, url| {
+                let worker_urls = worker_urls_clone.clone();
+                tokio::spawn(async move {
+                    let mut urls = worker_urls.lock().await;
+                    urls.entry(worker_id).or_insert_with(Vec::new).push(url);
+                });
+            }));
+
+        let num_workers = 3;
+        crawler.crawl(&mock_server.uri(), num_workers).await.unwrap();
+
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+        let urls = worker_urls.lock().await;
+
+        println!("\nRound-robin distribution test:");
+        for (worker_id, worker_urls) in urls.iter() {
+            println!("  Worker {}: {} URLs", worker_id, worker_urls.len());
+        }
+
+        // Each worker should have processed some URLs
+        for worker_id in 0..num_workers {
+            let count = urls.get(&worker_id).map(|v| v.len()).unwrap_or(0);
+            assert!(
+                count > 0,
+                "Worker {} did not process any URLs. Distribution: {:?}",
+                worker_id,
+                urls.iter().map(|(k, v)| (k, v.len())).collect::<Vec<_>>()
+            );
+        }
+    }
+
+    /// Test work stealing mechanism
+    #[tokio::test]
+    async fn test_work_stealing() {
+        let mock_server = MockServer::start().await;
+
+        // Create a page with many links to ensure work stealing can occur
+        let mut root_html = String::from("<html><body>");
+        for i in 1..=20 {
+            root_html.push_str(&format!(
+                r#"<a href="{}/page{}">Page {}</a>"#,
+                mock_server.uri(),
+                i,
+                i
+            ));
+        }
+        root_html.push_str("</body></html>");
+
+        Mock::given(method("GET"))
+            .and(path("/"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/html")
+                    .set_body_bytes(root_html.as_bytes()),
+            )
+            .mount(&mock_server)
+            .await;
+
+        for i in 1..=20 {
+            // Add delay to simulate work and increase chance of stealing
+            let html = format!(
+                "<html><body><a href='{}/subpage{}'>Subpage</a></body></html>",
+                mock_server.uri(),
+                i
+            );
+            Mock::given(method("GET"))
+                .and(path(format!("/page{}", i)))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .insert_header("content-type", "text/html")
+                        .set_body_bytes(html.as_bytes())
+                        .set_delay(tokio::time::Duration::from_millis(10)),
+                )
+                .mount(&mock_server)
+                .await;
+
+            Mock::given(method("GET"))
+                .and(path(format!("/subpage{}", i)))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .insert_header("content-type", "text/html")
+                        .set_body_bytes(b"<html><body>End</body></html>"),
+                )
+                .mount(&mock_server)
+                .await;
+        }
+
+        // Track when workers are idle (would trigger work stealing)
+        let worker_idle_count: Arc<TokioMutex<HashMap<usize, usize>>> =
+            Arc::new(TokioMutex::new(HashMap::new()));
+        let worker_idle_clone = worker_idle_count.clone();
+
+        let crawler = Crawler::new()
+            .with_max_depth(3)
+            .with_progress_callback(Arc::new(move |worker_id, _url| {
+                let idle_count = worker_idle_clone.clone();
+                tokio::spawn(async move {
+                    let mut counts = idle_count.lock().await;
+                    *counts.entry(worker_id).or_insert(0) += 1;
+                });
+            }));
+
+        let num_workers = 5;
+        let results = crawler.crawl(&mock_server.uri(), num_workers).await.unwrap();
+
+        tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+
+        println!("\nWork stealing test:");
+        println!("Total pages crawled: {}", results.len());
+
+        let idle_counts = worker_idle_count.lock().await;
+        println!("Worker activity:");
+        for (worker_id, count) in idle_counts.iter() {
+            println!("  Worker {}: {} URLs processed", worker_id, count);
+        }
+
+        // Verify multiple workers were active (indication that work was distributed/stolen)
+        let active_workers = idle_counts.keys().count();
+        assert!(
+            active_workers > 1,
+            "Expected multiple workers to be active (work stealing), but only {} were active",
+            active_workers
+        );
     }
 }

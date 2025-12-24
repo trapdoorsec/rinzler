@@ -390,6 +390,7 @@ pub async fn handle_crawl(sub_matches: &ArgMatches) {
         println!("{}", msg);
     });
 
+    let start_time = std::time::Instant::now();
     let all_results = match execute_crawl(options, Some(progress_callback)).await {
         Ok(results) => results,
         Err(e) => {
@@ -398,8 +399,13 @@ pub async fn handle_crawl(sub_matches: &ArgMatches) {
             std::process::exit(1);
         }
     };
+    let duration = start_time.elapsed();
 
-    println!("\n✓ Crawl complete!\n");
+    println!("\n✓ Crawl complete!");
+    println!(
+        "  Duration: {:.2}s\n",
+        duration.as_secs_f64()
+    );
     println!("{} Persisting results to database...", "→".blue());
 
     // Persist results to database
@@ -624,6 +630,7 @@ pub async fn handle_fuzz(sub_matches: &ArgMatches) {
         db_path,
     };
 
+    let start_time = std::time::Instant::now();
     let results = match rinzler_core::fuzz::execute_fuzz(options).await {
         Ok(results) => results,
         Err(e) => {
@@ -631,8 +638,17 @@ pub async fn handle_fuzz(sub_matches: &ArgMatches) {
             std::process::exit(1);
         }
     };
+    let duration = start_time.elapsed();
 
-    println!("\n✓ Fuzzing complete!\n");
+    println!("\n✓ Fuzzing complete!");
+    println!(
+        "  Duration: {:.2}s",
+        duration.as_secs_f64()
+    );
+    println!(
+        "  Requests/sec: {:.2}\n",
+        results.len() as f64 / duration.as_secs_f64()
+    );
 
     // Generate and display report
     let report = rinzler_core::fuzz::generate_fuzz_report(&results);
