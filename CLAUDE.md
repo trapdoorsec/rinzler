@@ -224,7 +224,8 @@ The main binary uses clap for argument parsing with custom styling (via clap-car
 - **Tests**: Unit tests in `rinzler/tests/handlers_tests.rs`
 
 ### Design Patterns
-- **Work-Stealing Queues**: Each worker maintains its own queue (VecDeque) of URLs to process. When a worker's queue is empty, it attempts to steal work from other workers' queues for better load balancing. Implemented in both crawler and fuzz modules.
+- **Forced Distribution (Crawler)**: Each worker maintains its own queue (VecDeque) of URLs. Discovered URLs are distributed round-robin across all workers, and workers only process from their own queues. This ensures even load distribution for I/O-bound crawling tasks.
+- **Work-Stealing Queues (Fuzzer)**: The fuzzer uses work-stealing where workers can steal from other workers' queues when idle. Better suited for the fuzzer's uniform workload pattern.
 - **Callback Architecture**: Progress and cross-domain callbacks use `Arc<dyn Fn>` for thread-safe function sharing
 - **Worker Pools**: Tokio-based async workers with progress tracking per worker
 - **Builder Pattern**: Crawler configuration uses builder pattern for flexibility
