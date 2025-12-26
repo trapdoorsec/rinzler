@@ -2,7 +2,8 @@
 
 A somewhat intelligent Web API scanner for security testing and reconnaissance.
 
-> Under active development. Core features implemented: crawling with security analysis, forced browsing/fuzzing, database persistence, and multi-format reporting.
+> Under active development. This is in pre-alpha and is intended for learning purposes only. It may contain security and performance issues.
+Core features implemented: crawling with security analysis, forced browsing/fuzzing, database persistence, and multi-format reporting.
 
 ## Features
 
