@@ -19,15 +19,19 @@
   <component name="ChangeListManager">
     <list default="true" id="75a6ddfc-3da5-4e6f-814e-a37b9fa2c551" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/rinzler-core/src/crawl.rs" beforeDir="false" afterPath="$PROJECT_DIR$/rinzler-core/src/crawl.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/rinzler-core/src/fuzz.rs" beforeDir="false" afterPath="$PROJECT_DIR$/rinzler-core/src/fuzz.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Cargo.lock" beforeDir="false" afterPath="$PROJECT_DIR$/Cargo.lock" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Cargo.toml" beforeDir="false" afterPath="$PROJECT_DIR$/Cargo.toml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/rinzler-core/Cargo.toml" beforeDir="false" afterPath="$PROJECT_DIR$/rinzler-core/Cargo.toml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/rinzler-core/src/data.rs" beforeDir="false" afterPath="$PROJECT_DIR$/rinzler-core/src/data.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/rinzler-scanner/src/crawler.rs" beforeDir="false" afterPath="$PROJECT_DIR$/rinzler-scanner/src/crawler.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/rinzler/Cargo.toml" beforeDir="false" afterPath="$PROJECT_DIR$/rinzler/Cargo.toml" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
     <option name="LAST_RESOLUTION" value="IGNORE" />
   </component>
-  <component name="ExecutionTargetManager" SELECTED_TARGET="RsBuildProfile:release" />
+  <component name="ExecutionTargetManager" SELECTED_TARGET="RsBuildProfile:dev" />
   <component name="FileTemplateManagerImpl">
     <option name="RECENT_TEMPLATES">
       <list>
@@ -55,41 +59,42 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent">{
-  &quot;keyToString&quot;: {
-    &quot;Cargo.Build.executor&quot;: &quot;Run&quot;,
-    &quot;Cargo.Check.executor&quot;: &quot;Run&quot;,
-    &quot;Cargo.Run.executor&quot;: &quot;Run&quot;,
-    &quot;Cargo.Test.executor&quot;: &quot;Run&quot;,
-    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.rust.reset.selective.auto.import&quot;: &quot;true&quot;,
-    &quot;com.intellij.ml.llm.matterhorn.ej.ui.settings.DefaultModelSelectionForGA.v1&quot;: &quot;true&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
-    &quot;junie.onboarding.icon.badge.shown&quot;: &quot;true&quot;,
-    &quot;last_opened_file_path&quot;: &quot;/home/akses/src/rinzler/rinzler&quot;,
-    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
-    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
-    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
-    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
-    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
-    &quot;org.rust.cargo.project.model.PROJECT_DISCOVERY&quot;: &quot;true&quot;,
-    &quot;org.rust.cargo.project.model.impl.CargoExternalSystemProjectAware.subscribe.first.balloon&quot;: &quot;&quot;,
-    &quot;org.rust.first.attach.projects&quot;: &quot;true&quot;,
-    &quot;run.code.analysis.last.selected.profile&quot;: &quot;pProject Default&quot;,
-    &quot;settings.editor.selected.configurable&quot;: &quot;reference.settingsdialog.IDE.editor.colors.Color Scheme Font&quot;,
-    &quot;to.speed.mode.migration.done&quot;: &quot;true&quot;,
-    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "Cargo.Build.executor": "Run",
+    "Cargo.Check.executor": "Run",
+    "Cargo.Run.executor": "Run",
+    "Cargo.Test.executor": "Run",
+    "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "RunOnceActivity.rust.reset.selective.auto.import": "true",
+    "RunOnceActivity.typescript.service.memoryLimit.init": "true",
+    "com.intellij.ml.llm.matterhorn.ej.ui.settings.DefaultModelSelectionForGA.v1": "true",
+    "git-widget-placeholder": "main",
+    "junie.onboarding.icon.badge.shown": "true",
+    "last_opened_file_path": "/home/akses/src/rinzler",
+    "node.js.detected.package.eslint": "true",
+    "node.js.detected.package.tslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.tslint": "(autodetect)",
+    "nodejs_package_manager_path": "npm",
+    "org.rust.cargo.project.model.PROJECT_DISCOVERY": "true",
+    "org.rust.cargo.project.model.impl.CargoExternalSystemProjectAware.subscribe.first.balloon": "",
+    "org.rust.first.attach.projects": "true",
+    "run.code.analysis.last.selected.profile": "pProject Default",
+    "settings.editor.selected.configurable": "reference.settingsdialog.IDE.editor.colors.Color Scheme Font",
+    "to.speed.mode.migration.done": "true",
+    "vue.rearranger.settings.migration": "true"
   }
-}</component>
+}]]></component>
   <component name="RecentsManager">
     <key name="CopyFile.RECENT_KEYS">
       <recent name="$PROJECT_DIR$/rinzler" />
     </key>
   </component>
-  <component name="RunManager" selected="Cargo.Test">
+  <component name="RunManager" selected="Cargo.Check">
     <configuration name="Build" type="CargoCommandRunConfiguration" factoryName="Cargo Command" nameIsGenerated="true">
       <option name="buildProfileId" value="dev" />
       <option name="command" value="build" />
@@ -197,12 +202,12 @@
       </method>
     </configuration>
     <list>
-      <item itemvalue="Cargo.Check" />
-      <item itemvalue="Cargo.Test" />
       <item itemvalue="Cargo.Build" />
-      <item itemvalue="Cargo.Run" />
-      <item itemvalue="Cargo.Publish" />
+      <item itemvalue="Cargo.Check" />
       <item itemvalue="Cargo.Clean" />
+      <item itemvalue="Cargo.Publish" />
+      <item itemvalue="Cargo.Run" />
+      <item itemvalue="Cargo.Test" />
     </list>
   </component>
   <component name="RustProjectSettings">
@@ -221,6 +226,7 @@
       <workItem from="1765459496446" duration="50971000" />
       <workItem from="1765713762418" duration="277000" />
       <workItem from="1765714393751" duration="36982000" />
+      <workItem from="1766924976945" duration="5074000" />
     </task>
     <servers />
   </component>

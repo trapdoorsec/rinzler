@@ -3,6 +3,7 @@ use crate::result::CrawlResult;
 use reqwest::Client;
 use scraper::{Html, Selector};
 use std::collections::{HashSet, VecDeque};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::Mutex;
@@ -11,15 +12,22 @@ use url::Url;
 
 pub type ProgressCallback = Arc<dyn Fn(usize, String) + Send + Sync>;
 pub type CrossDomainCallback = Arc<dyn Fn(String, String) -> bool + Send + Sync>;
+pub type ResultCallback = Arc<dyn Fn(CrawlResult) + Send + Sync>;
+
+type VisitedUrls = Arc<Mutex<HashSet<String>>>;
+type CrawlResults = Arc<Mutex<Vec<CrawlResult>>>;
+type WorkerQueues = Arc<Vec<Mutex<VecDeque<(String, usize)>>>>;
+type WorkCounter = Arc<AtomicUsize>;
 
 pub struct Crawler {
     client: Client,
-    visited: Arc<Mutex<HashSet<String>>>,
-    results: Arc<Mutex<Vec<CrawlResult>>>,
+    visited: VisitedUrls,
+    results: CrawlResults,
     max_depth: usize,
     base_domain: Option<String>,
     progress_callback: Option<ProgressCallback>,
     cross_domain_callback: Option<CrossDomainCallback>,
+    result_callback: Option<ResultCallback>,
     auto_follow: bool,
     #[allow(dead_code)]
     timeout_secs: u64,
@@ -51,6 +59,7 @@ impl Crawler {
             base_domain: None,
             progress_callback: None,
             cross_domain_callback: None,
+            result_callback: None,
             auto_follow: false,
             timeout_secs,
         }
@@ -81,6 +90,11 @@ impl Crawler {
         self
     }
 
+    pub fn with_result_callback(mut self, callback: ResultCallback) -> Self {
+        self.result_callback = Some(callback);
+        self
+    }
+
     pub async fn crawl(&self, start_url: &str, workers: usize) -> Result<Vec<CrawlResult>> {
         info!("Starting crawl of {} with {} workers", start_url, workers);
 
@@ -100,8 +114,12 @@ impl Crawler {
 
         // Create worker-owned queues with work stealing
         // Each worker has its own queue: VecDeque<(url, depth)>
-        let worker_queues: Arc<Vec<Mutex<VecDeque<(String, usize)>>>> =
+        let worker_queues: WorkerQueues =
             Arc::new((0..workers).map(|_| Mutex::new(VecDeque::new())).collect());
+
+        // Create atomic work counter to track pending work items
+        // This prevents race conditions in worker termination logic
+        let work_counter: WorkCounter = Arc::new(AtomicUsize::new(1));
 
         // Initialize worker 0's queue with the starting URL
         {
@@ -117,16 +135,16 @@ impl Crawler {
             let base_domain = base_domain.clone();
             let progress_cb = self.progress_callback.clone();
             let cross_domain_cb = self.cross_domain_callback.clone();
+            let result_cb = self.result_callback.clone();
             let auto_follow = self.auto_follow;
             let max_depth = self.max_depth;
             let visited = self.visited.clone();
             let results = self.results.clone();
             let worker_queues_clone = worker_queues.clone();
+            let work_counter_clone = work_counter.clone();
 
             let handle = tokio::spawn(async move {
                 debug!("Worker {} started", worker_id);
-                let mut empty_iterations = 0;
-                const MAX_EMPTY_ITERATIONS: usize = 10;  // Retry 10 times before giving up
 
                 loop {
                     // Get work from own queue (no stealing in crawl mode)
@@ -136,29 +154,23 @@ impl Crawler {
                     };
 
                     let (url, depth) = if let Some(item) = work_item {
-                        // Reset empty counter since we found work
-                        empty_iterations = 0;
                         item
                     } else {
-                        // Own queue is empty - check if all workers are done
-                        if Self::all_queues_empty(&worker_queues_clone).await {
-                            empty_iterations += 1;
-                            debug!("Worker {} found all queues empty ({}/{})", worker_id, empty_iterations, MAX_EMPTY_ITERATIONS);
-                            if empty_iterations >= MAX_EMPTY_ITERATIONS {
-                                debug!("Worker {} exiting", worker_id);
-                                break;
-                            }
-                        } else {
-                            empty_iterations = 0;  // Reset counter
+                        // Own queue is empty - check if all work is done
+                        let pending_work = work_counter_clone.load(Ordering::SeqCst);
+                        if pending_work == 0 {
+                            debug!("Worker {} exiting (no work remaining)", worker_id);
+                            break;
                         }
 
-                        // Sleep and retry
+                        // Sleep briefly and retry
                         tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
                         continue;
                     };
 
-                    // Check depth limit
+                    // Check depth limit - decrement counter even if we skip
                     if depth >= max_depth {
+                        work_counter_clone.fetch_sub(1, Ordering::SeqCst);
                         continue;
                     }
 
@@ -178,6 +190,11 @@ impl Crawler {
                     .await
                     {
                         Ok((crawl_result, new_urls)) => {
+                            // Call result callback if provided
+                            if let Some(ref callback) = result_cb {
+                                callback(crawl_result.clone());
+                            }
+
                             // Store the result
                             {
                                 let mut results_lock = results.lock().await;
@@ -208,6 +225,9 @@ impl Crawler {
                                     queue.push_back((new_url.clone(), depth + 1));
                                     drop(queue); // Release lock immediately
 
+                                    // Increment work counter for the new queued item
+                                    work_counter_clone.fetch_add(1, Ordering::SeqCst);
+
                                     // Round-robin to next worker
                                     target_worker = (target_worker + 1) % worker_queues_clone.len();
                                 }
@@ -217,6 +237,9 @@ impl Crawler {
                             warn!("Crawl error for {}: {}", url, e);
                         }
                     }
+
+                    // Decrement work counter now that we're done processing this item
+                    work_counter_clone.fetch_sub(1, Ordering::SeqCst);
                 }
 
                 debug!("Worker {} finished", worker_id);
@@ -235,17 +258,6 @@ impl Crawler {
         let results = self.results.lock().await;
         info!("Crawl complete. Visited {} pages", results.len());
         Ok(results.clone())
-    }
-
-
-    /// Check if all worker queues are empty
-    async fn all_queues_empty(worker_queues: &Arc<Vec<Mutex<VecDeque<(String, usize)>>>>) -> bool {
-        for queue in worker_queues.iter() {
-            if !queue.lock().await.is_empty() {
-                return false;
-            }
-        }
-        true
     }
 
     /// Static version of fetch_and_parse for use in spawned tasks

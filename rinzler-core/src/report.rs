@@ -16,15 +16,17 @@ pub enum ReportFormat {
     Markdown,
 }
 
-impl ReportFormat {
-    pub fn from_str(s: &str) -> Option<Self> {
+impl std::str::FromStr for ReportFormat {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
-            "text" => Some(ReportFormat::Text),
-            "json" => Some(ReportFormat::Json),
-            "csv" => Some(ReportFormat::Csv),
-            "html" => Some(ReportFormat::Html),
-            "markdown" | "md" => Some(ReportFormat::Markdown),
-            _ => None,
+            "text" => Ok(ReportFormat::Text),
+            "json" => Ok(ReportFormat::Json),
+            "csv" => Ok(ReportFormat::Csv),
+            "html" => Ok(ReportFormat::Html),
+            "markdown" | "md" => Ok(ReportFormat::Markdown),
+            _ => Err(format!("Unknown format: {}", s)),
         }
     }
 }

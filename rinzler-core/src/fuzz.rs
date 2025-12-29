@@ -11,6 +11,9 @@ use std::time::Duration;
 use tokio::sync::Mutex;
 use url::Url;
 
+/// Type alias for worker queue structure
+type WorkerQueues = Arc<Vec<Mutex<VecDeque<(String, FuzzSource)>>>>;
+
 /// Result of a fuzz attempt
 #[derive(Debug, Clone)]
 pub struct FuzzResult {
@@ -126,7 +129,7 @@ pub async fn execute_fuzz(options: FuzzOptions) -> Result<Vec<FuzzResult>, Strin
 
     // Create worker-owned queues with work stealing
     // Each worker has its own queue: VecDeque<(url, source)>
-    let worker_queues: Arc<Vec<Mutex<VecDeque<(String, FuzzSource)>>>> =
+    let worker_queues: WorkerQueues =
         Arc::new((0..threads).map(|_| Mutex::new(VecDeque::new())).collect());
 
     // Distribute initial URLs evenly across workers
@@ -313,7 +316,7 @@ pub async fn execute_fuzz(options: FuzzOptions) -> Result<Vec<FuzzResult>, Strin
 /// Try to steal work from other workers
 async fn try_steal_fuzz_work(
     worker_id: usize,
-    worker_queues: &Arc<Vec<Mutex<VecDeque<(String, FuzzSource)>>>>,
+    worker_queues: &WorkerQueues,
 ) -> Option<(String, FuzzSource)> {
     // Try to steal from each other worker
     for target_id in 0..worker_queues.len() {
@@ -332,7 +335,7 @@ async fn try_steal_fuzz_work(
 
 /// Check if all worker queues are empty
 async fn all_fuzz_queues_empty(
-    worker_queues: &Arc<Vec<Mutex<VecDeque<(String, FuzzSource)>>>>,
+    worker_queues: &WorkerQueues,
 ) -> bool {
     for queue in worker_queues.iter() {
         if !queue.lock().await.is_empty() {

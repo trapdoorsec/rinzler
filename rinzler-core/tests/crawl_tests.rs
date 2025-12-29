@@ -113,28 +113,19 @@ fn test_extract_url_path_with_username() {
 fn test_follow_mode_disabled() {
     let mode = FollowMode::Disabled;
     // Just verify we can construct it
-    match mode {
-        FollowMode::Disabled => assert!(true),
-        _ => assert!(false),
-    }
+    assert!(matches!(mode, FollowMode::Disabled));
 }
 
 #[test]
 fn test_follow_mode_prompt() {
     let mode = FollowMode::Prompt;
-    match mode {
-        FollowMode::Prompt => assert!(true),
-        _ => assert!(false),
-    }
+    assert!(matches!(mode, FollowMode::Prompt));
 }
 
 #[test]
 fn test_follow_mode_auto() {
     let mode = FollowMode::Auto;
-    match mode {
-        FollowMode::Auto => assert!(true),
-        _ => assert!(false),
-    }
+    assert!(matches!(mode, FollowMode::Auto));
 }
 
 // ============================================================================

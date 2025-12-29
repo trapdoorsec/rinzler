@@ -8,13 +8,14 @@ Rinzler is a Web API scanning tool under active development. It's designed to be
 
 ## Workspace Structure
 
-This is a Rust workspace with three crates:
+This is a Rust workspace with four crates:
 
 - **rinzler**: Main binary crate - CLI entry point with clap-based command parsing and handlers
 - **rinzler-core**: Core library with crawl orchestration, database management, and reporting
 - **rinzler-scanner**: Scanner implementation library with HTML crawling and link extraction
+- **rinzler-tui**: Terminal UI with REPL interface and real-time crawl monitoring (experimental)
 
-All workspace crates use shared version `0.1.11-alpha` and Rust edition 2024.
+All workspace crates use shared version `0.1.10-alpha` and Rust edition 2024.
 
 ## Key Dependencies
 
@@ -35,6 +36,7 @@ All workspace crates use shared version `0.1.11-alpha` and Rust edition 2024.
 - **UUID generation**: uuid with v4 feature for unique identifiers
 - **Date/time**: chrono for timestamp formatting
 - **Testing**: tempfile for temporary test files
+- **TUI framework**: ratatui for terminal user interface + crossterm for terminal control
 
 ## Common Commands
 
@@ -78,6 +80,7 @@ cargo test                     # Run all tests
 cargo test --locked            # Run tests with locked dependencies (CI mode)
 cargo test --all-features      # Run tests with all features enabled
 cargo test --all-targets       # Run tests for all targets
+cargo test -p rinzler-core crawl_tests  # Run specific test module
 ```
 
 ### Code Quality
@@ -227,17 +230,32 @@ The main binary uses clap for argument parsing with custom styling (via clap-car
 - **Forced Distribution (Crawler)**: Each worker maintains its own queue (VecDeque) of URLs. Discovered URLs are distributed round-robin across all workers, and workers only process from their own queues. This ensures even load distribution for I/O-bound crawling tasks.
 - **Work-Stealing Queues (Fuzzer)**: The fuzzer uses work-stealing where workers can steal from other workers' queues when idle. Better suited for the fuzzer's uniform workload pattern.
 - **Callback Architecture**: Progress and cross-domain callbacks use `Arc<dyn Fn>` for thread-safe function sharing
-- **Worker Pools**: Tokio-based async workers with progress tracking per worker
+- **Worker Pools**: Tokio-based async workers with progress tracking
 - **Builder Pattern**: Crawler configuration uses builder pattern for flexibility
-- **Progress UI**: indicatif MultiProgress for concurrent worker status display
+- **Progress UI**: indicatif ProgressBar with single spinner for overall crawl progress (changed from per-worker MultiProgress)
 - **URL Normalization**: Automatic http:// prefix addition for URLs without schemes
 - **HTTP Client Optimizations**: Shared reqwest client with connection pooling (50 max idle/host), HTTP/2 adaptive flow control, TCP keepalive, and configurable timeouts
+- **Channel-based Communication**: TUI uses tokio mpsc unbounded channels for async message passing between crawler and UI
+
+#### rinzler-tui (Library - Experimental)
+- **REPL Interface**: Interactive shell-like interface with command history
+  - Commands: init, workspace, crawl, fuzz, plugin, help, clear, exit
+  - History navigation with up/down arrows
+  - Command history persistence to ~/.rinzler_history
+  - Vim-style exit commands (:q!, :wq!, ZZ)
+  - Scrollable output with PageUp/PageDown
+- **Crawl Monitor** (in development): Real-time TUI for monitoring crawls
+  - Message types: Finding, Progress, Log, Complete
+  - Multi-panel layout: findings (left 60%), progress (top right), logs (bottom right)
+  - Auto-scrolling lists with color-coded status indicators
+  - Keyboard controls: Ctrl+C/q/Esc to exit, arrow keys for scrolling
+  - Channel-based communication via `mpsc::UnboundedSender/Receiver`
 
 ### Planned Components (Not Yet Implemented)
 - **Additional report formats**: CSV, HTML, and Markdown generators
 - **Advanced fuzzing**: Parameter fuzzing, HTTP method fuzzing, header injection
 - **Graph modeling**: Use petgraph for API endpoint relationship mapping
-- **TUI interface**: Interactive terminal UI for scan monitoring/control (rinzler-tui crate removed from workspace)
+- **TUI integration**: Connect rinzler-tui crawl monitor to main CLI for interactive scans
 - **Workspace system**: Project/target isolation for managing multiple targets
 - **Plugin system**: Extensibility through custom plugins
 

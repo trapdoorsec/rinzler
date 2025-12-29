@@ -1,11 +1,9 @@
-use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use indicatif::{ProgressBar, ProgressStyle};
 use rinzler_scanner::Crawler;
 use rinzler_scanner::result::CrawlResult;
 use std::collections::{HashMap, HashSet};
 use std::io::{self, Write};
 use std::sync::{Arc, Mutex as StdMutex};
-use std::time::Duration;
-use tokio::sync::Mutex;
 use url::Url;
 
 /// Options for configuring a crawl operation
@@ -30,6 +28,9 @@ pub enum FollowMode {
 /// Callback for reporting crawl progress
 pub type CrawlProgressCallback = Arc<dyn Fn(String) + Send + Sync>;
 
+/// Callback for reporting individual crawl results as they come in
+pub type CrawlResultCallback = Arc<dyn Fn(CrawlResult) + Send + Sync>;
+
 /// Extract the path component from a URL
 pub fn extract_url_path(url: &str) -> String {
     Url::parse(url)
@@ -50,6 +51,7 @@ pub fn extract_url_path(url: &str) -> String {
 pub async fn execute_crawl(
     options: CrawlOptions,
     progress_callback: Option<CrawlProgressCallback>,
+    result_callback: Option<CrawlResultCallback>,
 ) -> Result<Vec<CrawlResult>, String> {
     let CrawlOptions {
         urls,
@@ -59,41 +61,31 @@ pub async fn execute_crawl(
         show_progress_bars,
     } = options;
 
-    // Set up multi-progress for worker tracking (only if enabled)
-    let m = if show_progress_bars {
-        Some(Arc::new(MultiProgress::new()))
+    // Set up single progress bar for overall crawl progress (only if enabled)
+    let progress_bar = if show_progress_bars {
+        let pb = ProgressBar::new_spinner();
+        pb.set_style(
+            ProgressStyle::default_spinner()
+                .template("{spinner:.cyan} {msg}")
+                .unwrap(),
+        );
+        pb.set_message("Starting crawl...");
+        Some(Arc::new(pb))
     } else {
         None
     };
-    let worker_bars: Arc<Mutex<HashMap<usize, ProgressBar>>> = Arc::new(Mutex::new(HashMap::new()));
 
-    // Create progress bars for each worker (only if enabled)
-    if show_progress_bars && let Some(ref multi_progress) = m {
-        for i in 0..threads {
-            let pb = multi_progress.add(ProgressBar::new_spinner());
-            pb.set_style(
-                ProgressStyle::default_spinner()
-                    .template("{spinner:.cyan} Worker {msg}")
-                    .unwrap(),
-            );
-            pb.enable_steady_tick(Duration::from_millis(100));
-            pb.set_message(format!("{}: idle", i));
-            worker_bars.lock().await.insert(i, pb);
-        }
-    }
+    // Counter for tracking processed URLs
+    let processed_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
 
     // Progress callback for worker updates (only if progress bars enabled)
     let internal_progress_callback: rinzler_scanner::ProgressCallback = if show_progress_bars {
-        let worker_bars_clone = worker_bars.clone();
-        Arc::new(move |worker_id: usize, url: String| {
-            let path = extract_url_path(&url);
-
-            // Use try_lock to avoid blocking in async context
-            if let Ok(bars) = worker_bars_clone.try_lock()
-                && let Some(pb) = bars.get(&worker_id)
-            {
-                pb.set_message(format!("{}: {}", worker_id, path));
-            }
+        let pb_clone = progress_bar.clone().unwrap();
+        let count_clone = processed_count.clone();
+        Arc::new(move |_worker_id: usize, _url: String| {
+            let count = count_clone.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+            pb_clone.set_message(format!("Crawling... {} URLs processed", count));
+            pb_clone.tick();
         })
     } else {
         // No-op callback when progress bars are disabled
@@ -113,7 +105,7 @@ pub async fn execute_crawl(
             let domain_decisions: Arc<StdMutex<(HashSet<String>, HashSet<String>)>> =
                 Arc::new(StdMutex::new((HashSet::new(), HashSet::new())));
 
-            let m_clone = m.clone();
+            let pb_clone = progress_bar.clone();
             let domain_decisions_clone = domain_decisions.clone();
             Arc::new(move |url: String, _base: String| -> bool {
                 let parsed = Url::parse(&url).ok();
@@ -135,11 +127,11 @@ pub async fn execute_crawl(
                     return false;
                 }
 
-                // Not in either set - ask the user (only if MultiProgress is available)
-                let result = if let Some(ref multi_progress) = m_clone {
-                    multi_progress.suspend(|| {
+                // Not in either set - ask the user (only if progress bar is available)
+                let result = if let Some(ref pb) = pb_clone {
+                    pb.suspend(|| {
                         print!(
-                            "\n⚠️  Cross-domain link detected: {}\nFollow this link? [y/N]: ",
+                            "\n[!] Cross-domain link detected: {}\nFollow this link? [y/N]: ",
                             domain
                         );
                         io::stdout().flush().unwrap();
@@ -172,11 +164,20 @@ pub async fn execute_crawl(
     };
 
     // Create crawler with callbacks
-    let crawler = Crawler::new()
+    let mut crawler = Crawler::new()
         .with_max_depth(max_depth)
         .with_auto_follow(false) // We handle cross-domain logic in the callback now
         .with_progress_callback(internal_progress_callback)
         .with_cross_domain_callback(cross_domain_callback);
+
+    // Add result callback if provided (converts CrawlResultCallback to ResultCallback)
+    if let Some(ref cb) = result_callback {
+        let cb_clone = cb.clone();
+        let result_cb: rinzler_scanner::ResultCallback = Arc::new(move |result: CrawlResult| {
+            cb_clone(result);
+        });
+        crawler = crawler.with_result_callback(result_cb);
+    }
 
     // Crawl each URL
     let mut all_results = Vec::new();
@@ -198,20 +199,16 @@ pub async fn execute_crawl(
             }
             Err(e) => {
                 if let Some(ref callback) = progress_callback {
-                    callback(format!("⚠️  Failed to crawl {}: {}", url_str, e));
+                    callback(format!("[!]  Failed to crawl {}: {}", url_str, e));
                 }
             }
         }
     }
 
-    // Clear all progress bars (only if enabled)
-    if show_progress_bars {
-        for (_, pb) in worker_bars.lock().await.iter() {
-            pb.finish_and_clear();
-        }
-        if let Some(ref multi_progress) = m {
-            multi_progress.clear().unwrap();
-        }
+    // Finish progress bar (only if enabled)
+    if let Some(ref pb) = progress_bar {
+        let total = processed_count.load(std::sync::atomic::Ordering::Relaxed);
+        pb.finish_with_message(format!("Crawl complete! {} URLs processed", total));
     }
 
     Ok(all_results)
@@ -225,7 +222,7 @@ pub fn generate_crawl_report(results: &[CrawlResult]) -> String {
 
     let mut report = String::new();
     report.push_str("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n");
-    report.push_str("📊 Summary:\n");
+    report.push_str("# Summary:\n");
     report.push_str(&format!("  Pages crawled: {}\n", filtered_results.len()));
 
     let total_links: usize = filtered_results.iter().map(|r| r.links_found.len()).sum();
@@ -252,7 +249,7 @@ pub fn generate_crawl_report(results: &[CrawlResult]) -> String {
 
     // Display results grouped by host
     for (host, host_results) in by_host.iter() {
-        report.push_str(&format!("📍 {}\n", host));
+        report.push_str(&format!("## {}\n", host));
         report.push_str(&format!("  {} pages found\n\n", host_results.len()));
 
         for result in host_results {
@@ -285,4 +282,8 @@ pub fn generate_crawl_report(results: &[CrawlResult]) -> String {
     }
 
     report
+}
+
+#[cfg(test)]
+mod tests {
 }

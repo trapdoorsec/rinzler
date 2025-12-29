@@ -16,7 +16,7 @@ pub enum Severity {
     Low,
     Info,
 }
-
+type NodeQueryResult = Result<Vec<(i64, String, i64, Option<String>)>>;
 impl Severity {
     pub fn as_str(&self) -> &'static str {
         match self {
@@ -541,6 +541,7 @@ CREATE INDEX IF NOT EXISTS idx_http_transactions_timestamp ON http_transactions(
     }
 
     // Technology detection
+    #[allow(clippy::too_many_arguments)]
     pub fn insert_technology(
         &self,
         node_id: i64,
@@ -580,6 +581,7 @@ CREATE INDEX IF NOT EXISTS idx_http_transactions_timestamp ON http_transactions(
     }
 
     // HTTP transaction logging
+    #[allow(clippy::too_many_arguments)]
     pub fn log_http_transaction(
         &self,
         session_id: &str,
@@ -618,7 +620,7 @@ CREATE INDEX IF NOT EXISTS idx_http_transactions_timestamp ON http_transactions(
     pub fn get_nodes_by_session(
         &self,
         session_id: &str,
-    ) -> Result<Vec<(i64, String, i64, Option<String>)>> {
+    ) -> NodeQueryResult {
         let mut stmt = self.conn.prepare(
             "SELECT n.id, n.url, n.response_code, n.service_type
              FROM nodes n

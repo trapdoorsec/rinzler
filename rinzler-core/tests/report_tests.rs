@@ -3,6 +3,7 @@
 use rinzler_core::report::{
     FindingData, ReportData, ReportFormat, ScanInfo, SeverityCounts, SitemapNode,
 };
+use std::str::FromStr;
 
 // ============================================================================
 // Report Format Tests
@@ -11,62 +12,62 @@ use rinzler_core::report::{
 #[test]
 fn test_report_format_from_str_text() {
     let format = ReportFormat::from_str("text");
-    assert!(matches!(format, Some(ReportFormat::Text)));
+    assert!(matches!(format, Ok(ReportFormat::Text)));
 }
 
 #[test]
 fn test_report_format_from_str_json() {
     let format = ReportFormat::from_str("json");
-    assert!(matches!(format, Some(ReportFormat::Json)));
+    assert!(matches!(format, Ok(ReportFormat::Json)));
 }
 
 #[test]
 fn test_report_format_from_str_csv() {
     let format = ReportFormat::from_str("csv");
-    assert!(matches!(format, Some(ReportFormat::Csv)));
+    assert!(matches!(format, Ok(ReportFormat::Csv)));
 }
 
 #[test]
 fn test_report_format_from_str_html() {
     let format = ReportFormat::from_str("html");
-    assert!(matches!(format, Some(ReportFormat::Html)));
+    assert!(matches!(format, Ok(ReportFormat::Html)));
 }
 
 #[test]
 fn test_report_format_from_str_markdown() {
     let format = ReportFormat::from_str("markdown");
-    assert!(matches!(format, Some(ReportFormat::Markdown)));
+    assert!(matches!(format, Ok(ReportFormat::Markdown)));
 }
 
 #[test]
 fn test_report_format_from_str_md() {
     let format = ReportFormat::from_str("md");
-    assert!(matches!(format, Some(ReportFormat::Markdown)));
+    assert!(matches!(format, Ok(ReportFormat::Markdown)));
 }
 
 #[test]
 fn test_report_format_from_str_case_insensitive() {
     assert!(matches!(
         ReportFormat::from_str("TEXT"),
-        Some(ReportFormat::Text)
+        Ok(ReportFormat::Text)
     ));
     assert!(matches!(
         ReportFormat::from_str("Json"),
-        Some(ReportFormat::Json)
+        Ok(ReportFormat::Json)
     ));
     assert!(matches!(
         ReportFormat::from_str("CSV"),
-        Some(ReportFormat::Csv)
+        Ok(ReportFormat::Csv)
     ));
 }
 
 #[test]
 fn test_report_format_from_str_invalid() {
     let format = ReportFormat::from_str("invalid");
-    assert!(format.is_none());
+    assert!(format.is_err());
 
     let format = ReportFormat::from_str("pdf");
-    assert!(format.is_none());
+    assert!(format.is_err());
 }
 
 // ============================================================================

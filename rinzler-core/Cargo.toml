@@ -14,7 +14,7 @@ categories = ["command-line-utilities", "development-tools"]
 
 [dependencies]
 rusqlite.workspace = true
-rinzler-scanner = { version = "0.1.10-alpha", path = "../rinzler-scanner" }
+rinzler-scanner = { version = "0.1.12-alpha", path = "../rinzler-scanner" }
 tokio.workspace = true
 url.workspace = true
 indicatif.workspace = true

@@ -1,3 +1,5 @@
+pub mod crawl_monitor;
+
 use anyhow::Result;
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind},
@@ -38,6 +40,12 @@ pub struct App {
     temp_input: String,
     exit_mode: ExitMode,
     awaiting_save_confirmation: bool,
+}
+
+impl Default for App {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl App {
@@ -234,7 +242,7 @@ impl App {
         self.add_output(format!("> {}", input));
 
         // Parse and execute command
-        let parts: Vec<&str> = input.trim().split_whitespace().collect();
+        let parts: Vec<&str> = input.split_whitespace().collect();
         if parts.is_empty() {
             return;
         }
@@ -346,8 +354,8 @@ impl App {
 
                     self.add_output(format!("🕷️  Crawling: {}", url));
                     self.add_output(format!("Workers: {}", threads));
-                    self.add_output(format!("Max depth: 3"));
-                    self.add_output(format!("Cross-domain: disabled (same domain only)"));
+                    self.add_output("Max depth: 3".to_string());
+                    self.add_output("Cross-domain: disabled (same domain only)".to_string());
                     self.add_output("");
 
                     // Create crawl options
@@ -372,7 +380,7 @@ impl App {
                     // Execute crawl in a blocking manner using tokio runtime
                     let result = std::thread::spawn(move || {
                         let rt = tokio::runtime::Runtime::new().unwrap();
-                        rt.block_on(execute_crawl(options, Some(progress_callback)))
+                        rt.block_on(execute_crawl(options, Some(progress_callback), None))
                     })
                     .join();
 

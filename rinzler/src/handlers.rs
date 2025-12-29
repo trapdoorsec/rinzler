@@ -1,12 +1,12 @@
 use clap::ArgMatches;
 use colored::Colorize;
-use pager::Pager;
 use rinzler_core::data::Database;
+use rinzler_tui::crawl_monitor::{self, CrawlMessage, LogLevel};
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tracing_subscriber;
+use std::sync::atomic::{AtomicBool, Ordering};
 use url::Url;
 
 const DEFAULT_WORDLIST: &str = include_str!("../wordlists/default.txt");
@@ -305,9 +305,6 @@ pub fn handle_workspace_rename(args: &ArgMatches) {
 }
 
 pub async fn handle_crawl(sub_matches: &ArgMatches) {
-    // Initialize tracing for logging
-    tracing_subscriber::fmt::init();
-
     let url = sub_matches.get_one::<Url>("url");
     let hosts_file = sub_matches.get_one::<PathBuf>("hosts-file");
     let threads = *sub_matches.get_one::<usize>("threads").unwrap_or(&10);
@@ -376,37 +373,107 @@ pub async fn handle_crawl(sub_matches: &ArgMatches) {
     println!("Session ID: {}", session_id.bright_white());
     println!();
 
-    // Create crawl options
+    // Create TUI monitor channel and spawn monitor in separate OS thread
+    let (tx, rx) = crawl_monitor::create_monitor_channel();
+    let should_exit = Arc::new(AtomicBool::new(false));
+    let should_exit_clone = should_exit.clone();
+
+    let tui_handle = std::thread::spawn(move || {
+        if let Err(e) = crawl_monitor::run_monitor(rx, should_exit_clone) {
+            eprintln!("TUI error: {}", e);
+        }
+    });
+
+    // Send session ID to TUI
+    let _ = tx.send(CrawlMessage::SessionStarted {
+        session_id: session_id.clone(),
+    });
+
+    // Create crawl options (disable built-in progress bars, using TUI instead)
     let options = CrawlOptions {
         urls,
         threads,
         max_depth: 3,
         follow_mode,
-        show_progress_bars: true,
+        show_progress_bars: false,  // Using TUI instead
     };
 
-    // Execute crawl with progress callback
-    let progress_callback = Arc::new(|msg: String| {
-        println!("{}", msg);
+    // Execute crawl with progress callback that sends to TUI
+    let tx_progress = tx.clone();
+    let progress_callback = Arc::new(move |msg: String| {
+        let _ = tx_progress.send(CrawlMessage::Log {
+            level: LogLevel::Info,
+            message: msg,
+        });
+    });
+
+    // Result callback that sends findings to TUI in real-time
+    let tx_result = tx.clone();
+    let result_callback = Arc::new(move |result: rinzler_scanner::result::CrawlResult| {
+        // Perform security analysis on this result
+        // Note: We use a dummy node_id of 0 since we haven't inserted to DB yet
+        let findings = rinzler_core::security::analyze_crawl_result(&result, 0);
+
+        // Convert findings to TUI SecurityFinding format
+        let security_findings: Vec<crawl_monitor::SecurityFinding> = findings
+            .iter()
+            .map(|f| {
+                let severity_str = match f.severity {
+                    rinzler_core::data::Severity::Critical => "critical",
+                    rinzler_core::data::Severity::High => "high",
+                    rinzler_core::data::Severity::Medium => "medium",
+                    rinzler_core::data::Severity::Low => "low",
+                    rinzler_core::data::Severity::Info => "info",
+                };
+
+                crawl_monitor::SecurityFinding {
+                    title: f.title.clone(),
+                    severity: severity_str.to_string(),
+                    description: f.description.clone(),
+                    impact: f.impact.clone().unwrap_or_else(|| "No impact information available".to_string()),
+                    remediation: f.remediation.clone().unwrap_or_else(|| "No remediation available".to_string()),
+                    cwe: f.cwe_id.clone(),
+                    owasp: f.owasp_category.clone(),
+                }
+            })
+            .collect();
+
+        let _ = tx_result.send(CrawlMessage::Finding {
+            url: result.url.clone(),
+            status_code: result.status_code,
+            content_type: result.content_type.clone(),
+            security_findings,
+        });
     });
 
     let start_time = std::time::Instant::now();
-    let all_results = match execute_crawl(options, Some(progress_callback)).await {
+    let all_results = match execute_crawl(options, Some(progress_callback), Some(result_callback)).await {
         Ok(results) => results,
         Err(e) => {
-            eprintln!("✗ Crawl failed: {}", e);
+            let _ = tx.send(CrawlMessage::Log {
+                level: LogLevel::Error,
+                message: format!("Crawl failed: {}", e),
+            });
             let _ = db.fail_session(&session_id);
+            should_exit.store(true, Ordering::Relaxed);
+            let _ = tui_handle.join();
             std::process::exit(1);
         }
     };
     let duration = start_time.elapsed();
 
-    println!("\n✓ Crawl complete!");
-    println!(
-        "  Duration: {:.2}s\n",
-        duration.as_secs_f64()
-    );
-    println!("{} Persisting results to database...", "→".blue());
+    // Note: Findings are already sent in real-time via result_callback
+    // No need to send them again here
+
+    let _ = tx.send(CrawlMessage::Log {
+        level: LogLevel::Info,
+        message: format!("Crawl complete! Duration: {:.2}s", duration.as_secs_f64()),
+    });
+
+    let _ = tx.send(CrawlMessage::Log {
+        level: LogLevel::Info,
+        message: "Persisting results to database...".to_string(),
+    });
 
     // Persist results to database
     let mut findings_count = 0;
@@ -440,7 +507,7 @@ pub async fn handle_crawl(sub_matches: &ArgMatches) {
 
                 // Insert findings
                 for finding in findings {
-                    if let Ok(_) = db.insert_finding(&session_id, &finding) {
+                    if db.insert_finding(&session_id, &finding).is_ok() {
                         findings_count += 1;
                     }
                 }
@@ -458,43 +525,44 @@ pub async fn handle_crawl(sub_matches: &ArgMatches) {
 
     // Complete session
     if let Err(e) = db.complete_session(&session_id) {
-        eprintln!("✗ Failed to complete session: {}", e);
+        let _ = tx.send(CrawlMessage::Log {
+            level: LogLevel::Error,
+            message: format!("Failed to complete session: {}", e),
+        });
     }
 
-    println!(
-        "{} Saved {} nodes and {} findings",
-        "✓".green().bold(),
-        all_results.len(),
-        findings_count
-    );
-    println!();
+    let _ = tx.send(CrawlMessage::Log {
+        level: LogLevel::Info,
+        message: format!("Saved {} nodes and {} findings to database", all_results.len(), findings_count),
+    });
 
-    // Generate and display report
-    let report = generate_crawl_report(&all_results);
-
+    // Send findings summary to TUI
     if findings_count > 0 {
-        println!("{}", "═".repeat(60).bright_yellow());
-        println!("{}", "  SECURITY FINDINGS".yellow().bold());
-        println!("{}", "═".repeat(60).bright_yellow());
-        println!();
+        let _ = tx.send(CrawlMessage::Log {
+            level: LogLevel::Info,
+            message: "=".repeat(50),
+        });
+        let _ = tx.send(CrawlMessage::Log {
+            level: LogLevel::Info,
+            message: "SECURITY FINDINGS SUMMARY".to_string(),
+        });
+        let _ = tx.send(CrawlMessage::Log {
+            level: LogLevel::Info,
+            message: "=".repeat(50),
+        });
 
         // Display findings summary
         if let Ok(severity_counts) = db.get_findings_count_by_severity(&session_id) {
             for (severity, count) in severity_counts {
-                let severity_colored = match severity.as_str() {
-                    "critical" => severity.red().bold(),
-                    "high" => severity.red(),
-                    "medium" => severity.yellow(),
-                    "low" => severity.blue(),
-                    _ => severity.white(),
-                };
-                println!("  {} {}: {}", "•".white(), severity_colored, count);
+                let _ = tx.send(CrawlMessage::Log {
+                    level: LogLevel::Info,
+                    message: format!("  {}: {}", severity.to_uppercase(), count),
+                });
             }
         }
-        println!();
     }
 
-    // Handle report generation and output
+    // Handle report generation and output to file (if specified)
     let output_path = sub_matches.get_one::<PathBuf>("output");
     let format = sub_matches
         .get_one::<String>("format")
@@ -502,8 +570,11 @@ pub async fn handle_crawl(sub_matches: &ArgMatches) {
         .unwrap_or("text");
     let include_sitemap = sub_matches.get_flag("include-sitemap");
 
-    if output_path.is_some() || findings_count > 0 {
-        println!("{} Generating {} report...", "→".blue(), format);
+    if let Some(path) = output_path {
+        let _ = tx.send(CrawlMessage::Log {
+            level: LogLevel::Info,
+            message: format!("Generating {} report...", format),
+        });
 
         match rinzler_core::report::gather_report_data(&db, &session_id, include_sitemap) {
             Ok(report_data) => {
@@ -511,58 +582,76 @@ pub async fn handle_crawl(sub_matches: &ArgMatches) {
                     "text" => rinzler_core::report::generate_text_report(&report_data),
                     "json" => rinzler_core::report::generate_json_report(&report_data)
                         .unwrap_or_else(|e| {
-                            eprintln!("  {} Failed to generate JSON: {}", "✗".red(), e);
+                            let _ = tx.send(CrawlMessage::Log {
+                                level: LogLevel::Error,
+                                message: format!("Failed to generate JSON: {}", e),
+                            });
                             String::new()
                         }),
                     "csv" => {
-                        println!("  {} CSV format not yet implemented", "⚠".yellow());
+                        let _ = tx.send(CrawlMessage::Log {
+                            level: LogLevel::Warn,
+                            message: "CSV format not yet implemented".to_string(),
+                        });
                         String::new()
                     }
                     "html" => {
-                        println!("  {} HTML format not yet implemented", "⚠".yellow());
+                        let _ = tx.send(CrawlMessage::Log {
+                            level: LogLevel::Warn,
+                            message: "HTML format not yet implemented".to_string(),
+                        });
                         String::new()
                     }
                     "markdown" => {
-                        println!("  {} Markdown format not yet implemented", "⚠".yellow());
+                        let _ = tx.send(CrawlMessage::Log {
+                            level: LogLevel::Warn,
+                            message: "Markdown format not yet implemented".to_string(),
+                        });
                         String::new()
                     }
                     _ => {
-                        eprintln!("  {} Unknown format: {}", "✗".red(), format);
+                        let _ = tx.send(CrawlMessage::Log {
+                            level: LogLevel::Error,
+                            message: format!("Unknown format: {}", format),
+                        });
                         String::new()
                     }
                 };
 
                 if !report_content.is_empty() {
-                    if let Some(path) = output_path {
-                        match rinzler_core::report::save_report(&report_content, path) {
-                            Ok(_) => {
-                                println!(
-                                    "{} Report saved to: {}",
-                                    "✓".green().bold(),
-                                    path.display().to_string().bright_white()
-                                );
-                            }
-                            Err(e) => {
-                                eprintln!("{} Failed to save report: {}", "✗".red(), e);
-                            }
+                    match rinzler_core::report::save_report(&report_content, path) {
+                        Ok(_) => {
+                            let _ = tx.send(CrawlMessage::Log {
+                                level: LogLevel::Info,
+                                message: format!("Report saved to: {}", path.display()),
+                            });
                         }
-                    } else {
-                        // Display report in pager
-                        println!();
-                        Pager::with_pager("less -R").setup();
-                        print!("{}", report_content);
+                        Err(e) => {
+                            let _ = tx.send(CrawlMessage::Log {
+                                level: LogLevel::Error,
+                                message: format!("Failed to save report: {}", e),
+                            });
+                        }
                     }
                 }
             }
             Err(e) => {
-                eprintln!("{} Failed to generate report: {}", "✗".red(), e);
+                let _ = tx.send(CrawlMessage::Log {
+                    level: LogLevel::Error,
+                    message: format!("Failed to generate report: {}", e),
+                });
             }
         }
-    } else {
-        // No findings and no output file - just show crawl report
-        Pager::with_pager("less -R").setup();
-        print!("{}", report);
     }
+
+    // Send completion message to TUI with all required fields
+    let _ = tx.send(CrawlMessage::Complete {
+        total: all_results.len(),
+        findings_count,
+    });
+
+    // Wait for TUI to close (user presses 'q' or ESC)
+    let _ = tui_handle.join();
 }
 
 pub async fn handle_fuzz(sub_matches: &ArgMatches) {
