@@ -21,7 +21,7 @@ tokio = { version = "1.35", features = ["full"] }
 futures = "0.3"
 
 # HTTP client
-reqwest = { version = "0.12", features = ["json", "gzip", "cookies"] }
+reqwest = { version = "0.13", features = ["json", "gzip", "cookies"] }
 
 # CLI
 clap = { version = "4.4", features = ["derive", "cargo"] }
